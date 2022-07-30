@@ -5,6 +5,14 @@ import multiprocessing as mp
 from tqdm import tqdm
 import os
 import sys
+import psutil
+
+
+def check_memory_usage(unit = 'G'):
+    if unit == 'M':
+        print(f'Current memory usages: {psutil.Process().memory_info().rss / (1024 * 1024):.2f}MB')
+    if unit == 'G':
+        print(f'Current memory usages: {psutil.Process().memory_info().rss / (1024 * 1024 * 1024):.2f}GB')
 
 
 def reverse_complement(seq):
