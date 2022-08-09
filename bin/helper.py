@@ -6,15 +6,27 @@ from tqdm import tqdm
 import os
 import sys
 import psutil
+import time
 
+GLOBAL_START_TIME = time.time()
 
-def check_memory_usage(unit = 'G'):
+def check_memory_usage(unit = 'G', print_it=False):
     if unit == 'M':
-        print(f'Current memory usages: {psutil.Process().memory_info().rss / (1024 * 1024):.2f}MB')
+        if print_it:
+            print(f'Current memory usages: {psutil.Process().memory_info().rss / (1024 * 1024):.2f}MB')
+        return f'{psutil.Process().memory_info().rss / (1024 * 1024):.2f}MB'
     if unit == 'G':
-        print(f'Current memory usages: {psutil.Process().memory_info().rss / (1024 * 1024 * 1024):.2f}GB')
+        if print_it:
+            print(f'Current memory usages: {psutil.Process().memory_info().rss / (1024 * 1024 * 1024):.2f}GB')
+        return f'{psutil.Process().memory_info().rss / (1024 **3):.2f}GB'
 
-
+def check_runtime(start_time = GLOBAL_START_TIME, print_it=False):
+    hours,rem = divmod(time.time()-start_time, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if print_it:
+        print(f'''Current runtime: {int(hours):0>2}:{int(minutes):0>2}:{int(seconds)}''')
+    return f'{int(hours):0>2}:{int(minutes):0>2}:{int(seconds)}'
+    
 def reverse_complement(seq):
 	'''
 	Args: <str>
@@ -115,3 +127,19 @@ def check_exist(file_list):
             err_msg(f"Error: can not find file '{fn}'")
     if exit_code == 1:
         sys.exit()
+
+
+def err_msg(msg):
+	CRED = '\033[91m'
+	CEND = '\033[0m'
+	print(CRED + msg + CEND)	
+
+def warning_msg(msg):
+	CRED = '\033[93m'
+	CEND = '\033[0m'
+	print(CRED + msg + CEND)
+
+def green_msg(msg):
+    CRED = '\033[92m'
+    CEND = '\033[0m'
+    print(CRED + msg + CEND)

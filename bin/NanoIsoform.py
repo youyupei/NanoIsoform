@@ -62,16 +62,22 @@ def parse_arg():
                             '''))
     parser.add_argument('--uniform_prior', action='store_true',
                         help='Output the whitelist in Cellranger style')
-    
+    parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
+                        help='Output filename')
 
+
+
+
+    # Developer only argument
+    Dev_arg = parser.add_argument_group('For the developers only:')
+    Dev_arg.add_argument('--test_mode', action='store_true',
+                        help='Run in test mode.')
 
     args = parser.parse_args()
 
     # check file 
     helper.check_exist([args.prob_table, args.jwr_check_h5])
     return args
-
-
 
 def parse_format_input_file(args):
 
@@ -114,7 +120,9 @@ def parse_format_input_file(args):
         print(f'Indexing prob table file ...')
         d.set_index(
             ['reference_name', 'read_id',  'initial_junction'], inplace=True)
-        return d[['corrected_junction']]
+        
+        d.drop(columns = d.columns.difference(['corrected_junction']), inplace = True)
+        return d
 
     def parse_nanosplicer_jwr_h5(args):
         """Read the h5 file from the jwr checker
@@ -123,7 +131,8 @@ def parse_format_input_file(args):
         all_jwr = all_jwr.rename(columns={'id':'read_id', 'loc':'initial_junction', 'chrID':'reference_name'})
         print(f'Indexing jwr file ...')
         all_jwr.set_index(['reference_name', 'read_id',  'initial_junction'], inplace=True)
-        return all_jwr[['transcript_strand', 'JAQ']]
+        all_jwr.drop(columns = all_jwr.columns.difference(['transcript_strand', 'JAQ']))
+        return all_jwr
 
 
     def restructure_per_jwr_dataframe(all_jwr):
@@ -177,9 +186,13 @@ def parse_format_input_file(args):
     # read the input file (prob_table, all_jwr.h5)
     print(f'Parsing prob table file ...')
     prob_table = parse_nanosplicer_prob_table(args)
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+
     print(f'Parsing jwr file ...')
     all_jwr = parse_nanosplicer_jwr_h5(args)
-    
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+
+
     # correct JWRs in all_jwrs using NanoSplicer output
     print(f'Correcting JWRs using NanoSplicer output ...')
     all_jwr = all_jwr.merge(
@@ -189,16 +202,20 @@ def parse_format_input_file(args):
         left_index=True, 
         right_index=True)
     del prob_table
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
 
     # correct JWRs with JAQ > args.JAQ_thres
     print(f'Correcting JWRs using JAQ threshold ...')
     JAQ_pass = (all_jwr.corrected_junction.isnull()) & (all_jwr.JAQ >= args.JAQ_thres)
     all_jwr.loc[JAQ_pass, 'corrected_junction'] =\
         all_jwr.loc[JAQ_pass,].index.get_level_values('initial_junction')  
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
 
     # restructure table jwr per row -> read per raw
+    print('Restructuring table...')
     all_read = restructure_per_jwr_dataframe(all_jwr)
     del all_jwr
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
 
     return all_read
 
@@ -223,6 +240,7 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
         merge_d = org_d.merge(temp_d, 'left', left_index=True, right_index=True)
         merge_d = merge_d.drop(columns = ['reference_name', 'junc_count', 'junc'])
         return merge_d
+    
     def get_groups(array, max_diff = max_diff):
         # add index
         array_indexed = np.vstack([np.arange(len(array)), array]).T
@@ -241,7 +259,8 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
         
     # the grouping 
     all_reads = all_reads.set_index(['reference_name',
-                            'junc_count', 'junc'])    
+                            'junc_count', 'junc'])   
+
     # all reads group by chr/number of junctions/ junctions()
     all_reads = all_reads.groupby(level=[0,1]).apply(split_groupby, max_diff) 
     all_reads = all_reads.droplevel([0,1])
@@ -281,7 +300,6 @@ def correct_junction_per_group(all_reads, methods=CORRECTION_ARG['method']):
     # determine the order in group. Group with more reads comes first.
     keys_ordered = sorted(groups_gb_obj.groups.keys(), key = lambda x: x[3], reverse =True)
 
-
     # dic structure: group_key:Counter
     all_junc_counter = defaultdict(Counter)
     corrected_group = []
@@ -289,32 +307,40 @@ def correct_junction_per_group(all_reads, methods=CORRECTION_ARG['method']):
         # dictionary for correction
         group_single = groups_gb_obj.get_group(key).copy()
         
-
         # dict for correcting uncorrected jwrs
         correct_dict = {}
         for counter, junc in generate_df_per_junction(group_single, key):
             # save counts of certain subgroup
             all_junc_counter[key] += counter
-            
+
             for j in junc:
-                corrected_junc = correct_junction_majority_vote(
-                    counter, j, 
-                    max_diff=CORRECTION_ARG['dist'],
-                    min_prop=CORRECTION_ARG['maj_vot_min_prop'], 
-                    min_correct_read=CORRECTION_ARG['maj_vot_min_count'])
-                
-                correct_dict[j] = corrected_junc
-        
+                if methods == 'majority_vote':
+                    corrected_junc = correct_junction_majority_vote(
+                        counter, j, 
+                        max_diff=CORRECTION_ARG['dist'],
+                        min_prop=CORRECTION_ARG['maj_vot_min_prop'], 
+                        min_correct_read=CORRECTION_ARG['maj_vot_min_count'])
+                    
+                    correct_dict[j] = corrected_junc
+
+                elif methods == 'probability':
+                    corrected_junc = correct_junction_probability(
+                        counter, j, 
+                        max_diff=CORRECTION_ARG['dist'],
+                        min_prop=CORRECTION_ARG['maj_vot_min_prop'], 
+                        min_correct_read=CORRECTION_ARG['maj_vot_min_count'])
+                    
+                    correct_dict[j] = corrected_junc
+
         group_single['corrected_junction'] = \
             group_single.apply(correct_line, axis=1, correct_dict= correct_dict) 
         group_single['all_corrected'] = \
             group_single['corrected_junction'].apply(all)
         corrected_group.append(group_single)
-    return pd.concat(corrected_group)
+    corrected_d = pd.concat(corrected_group)
+    corrected_d.drop(columns=['junc_start', 'junc_end', 'corrected'], inplace=True)
+    return corrected_d
 
-
-
-        
 def generate_df_per_junction(df, key):
     """
     Process each df and key in pandas.groupby.__iter__() output
@@ -330,8 +356,11 @@ def generate_df_per_junction(df, key):
         # yield count of corrected junc and a list of uncorrected junc
         yield Counter(junc[corrected]), junc[~corrected].unique()
 
-def correct_junction_majority_vote(counter, junc, max_diff, min_prop, min_correct_read):
+def correct_junction_majority_vote(counter, junc, 
+                                max_diff, min_prop, min_correct_read):
     """Correct uncorrected JWRs based on nearby (with maxdiff) corrected JWRs.
+    Each JWR will be corret to the major junction supported by the nearby corrected
+    JWRs
 
     Args:
         counter (collection.Counter): Number of corrected JWRs supporting each 
@@ -347,7 +376,6 @@ def correct_junction_majority_vote(counter, junc, max_diff, min_prop, min_correc
     def check_max_diff(junc1, junc2, max_diff=max_diff):
         return np.all(np.abs([x-y for x,y in zip(junc1, junc2)]) <= max_diff)
     keys = [k for k in counter.keys() if check_max_diff(k, junc)]
-    
 
     # return None if no nearby corrected junction
     if not len(keys):
@@ -360,27 +388,69 @@ def correct_junction_majority_vote(counter, junc, max_diff, min_prop, min_correc
     else:
         return None
 
+def correct_junction_probability(
+                        counter, j, 
+                        max_diff=CORRECTION_ARG['dist'],
+                        min_prop=CORRECTION_ARG['prob_samp_min_prop'], 
+                        min_correct_read=CORRECTION_ARG['prob_samp_min_count']):
+    """Correct uncorrected JWRs based on nearby (with maxdiff) corrected JWRs.
+    Each JWR will be corret to the nearby junctions based on probabilities (cal-
+    culated based on the proportion of nearby JWRs supporting each junction)
+    Args:
+        counter (collection.Counter): Number of corrected JWRs supporting each 
+                                        nearby junction
+        junc (pd.Series): Unique uncorrected junctions 
+        max_diff (int): Maximal distance to define "nearby junctions"
+        min_prop (float): Minimum proportion of the each junction to be a candidate
+        min_correct_read (int): Minimum number of corrected reads for the each junction
+    Return:
+        corrected location for junction (`junc`) or 
+        None if no near by junction reach the min_prop.
+    """
+    def check_max_diff(junc1, junc2, max_diff=max_diff):
+        return np.all(np.abs([x-y for x,y in zip(junc1, junc2)]) <= max_diff)
+    
+    keys = [k for k in counter.keys() if check_max_diff(k, junc)]
+
+    # return None if no nearby corrected junction
+    if not len(keys):
+        return None
+
+    values = np.array([counter[k] for k in keys])
+    prop = values/sum(values)
+    if prop.max() >= min_prop and values.max() >= min_correct_read:
+        return keys[np.random.choice(np.array(range(len(keys)))[prop == prop.max()])]
+    else:
+        return None
+
+def output_h5_file_corrected_reads(d, filename, key='data'):
+    output_d = d[d.all_corrected == True].copy()
+    output_d['junc_start'] = output_d.corrected_junction.apply(lambda y: tuple([x[0] for x in y]))
+    output_d['junc_end'] = output_d.corrected_junction.apply(lambda y: tuple([x[1] for x in y]))
+    output_d.to_hdf(filename, key)
+
 def main(args):
-    print("parsing skipped for testing purpose..")
+    print("Formatting input data...")
     # get input data and reformat
-    helper.check_memory_usage()
     all_reads = parse_format_input_file(args)
-    #all_reads.to_hdf("large_set.h5", 'data')
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    
 
-    # group reads 
-    helper.check_memory_usage()
-    print("parsing large_set.h5")
-    all_reads = pd.read_hdf("large_set.h5", 'data')
-    all_reads = group_reads(all_reads, max_diff=MAX_DIFF)
+    print('Grouping reads...')
+    all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
 
-    # correction
-    # group reads based on nearby junc (number of junctions should match)
-    # majority vote
-    all_reads['group_count'] = all_reads.groupby(
-    ['reference_name','junc_count','sub_group']).JAQ.transform('count')
 
-    # filter 
+    print('Correcting reads in each group...')
+    # get corrected junction for groups
+    corrected_d = correct_junction_per_group(
+                    all_reads, methods=CORRECTION_ARG['method'])
+    
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+
+    output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
+    helper.green_msg(f"Output saved as {args.output_fn}!")
 
 def test(args):
     # test setup
@@ -390,29 +460,28 @@ def test(args):
     print('Reading input dataset...')
     helper.check_memory_usage()
     all_reads = pd.read_hdf(cached_data, 'data')
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
 
-    print('Finished.')
-    helper.check_memory_usage()
 
     print('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
-    print('Finished.')
-    helper.check_memory_usage()
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
 
     print('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=CORRECTION_ARG['method'])
+    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
     
-    print('Finished.')
-    helper.check_memory_usage()
-    print(corrected_d)
+    output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
+    helper.green_msg(f"Output saved as {args.output_fn}!")
 
 if __name__ == '__main__':
     args = parse_arg()
-    # test command line input
-    print(args)
-    #main(args)
-    test(args)
-    helper.check_memory_usage()
+    if args.test_mode:
+        # test command line input
+        print(args)
+        test(args)
+    else:
+        main(args)
