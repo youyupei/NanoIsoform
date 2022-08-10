@@ -13,8 +13,11 @@ import os
 from tqdm import tqdm
 import numpy as np
 
+
+
 import helper
 from config import *
+
 
 def parse_arg():
     parser = argparse.ArgumentParser(
@@ -428,6 +431,7 @@ def output_h5_file_corrected_reads(d, filename, key='data'):
     output_d['junc_start'] = output_d.corrected_junction.apply(lambda y: tuple([x[0] for x in y]))
     output_d['junc_end'] = output_d.corrected_junction.apply(lambda y: tuple([x[1] for x in y]))
     output_d.to_hdf(filename, key)
+    output_d.to_csv(filename+'.csv')
 
 def main(args):
     print("Formatting input data...")
