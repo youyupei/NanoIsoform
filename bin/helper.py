@@ -132,14 +132,14 @@ def check_exist(file_list):
 def err_msg(msg):
 	CRED = '\033[91m'
 	CEND = '\033[0m'
-	print(CRED + msg + CEND)	
+	return(CRED + msg + CEND)	
 
 def warning_msg(msg):
 	CRED = '\033[93m'
 	CEND = '\033[0m'
-	print(CRED + msg + CEND)
+	return(CRED + msg + CEND)
 
 def green_msg(msg):
     CRED = '\033[92m'
     CEND = '\033[0m'
-    print(CRED + msg + CEND)
+    return(CRED + msg + CEND)

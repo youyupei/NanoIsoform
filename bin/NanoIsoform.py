@@ -6,19 +6,31 @@ import textwrap
 import pandas as pd
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
-pd.set_option('display.max_colwidth', 20)
+pd.set_option('display.max_colwidth', 10)
 from collections import defaultdict, Counter
 import sys
 import os
 from tqdm import tqdm
 import numpy as np
-
+import logging
 
 
 import helper
 from config import *
 
+# ACTION REQUIRED FOR THE FINAL VERSION
+#   remove levelname, filname, funcName, lineno for the final version
+logging.basicConfig(format='[%(asctime)s] %(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s', datefmt='%a, %d %b %Y %H:%M:%S')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.info('Start running...')
 
+# store some useful stats during the run
+summary_msg = ''
+def add_summary(msg):
+    global summary_msg
+    summary_msg += msg + '\n'
+    
 def parse_arg():
     parser = argparse.ArgumentParser(
         description=textwrap.dedent(
@@ -32,15 +44,6 @@ def parse_arg():
     parser.add_argument('jwr_check_h5', type=str,
                         help='Filename of the HDF5 file output from NanoSplicer module'
                         'jwr_checker')
-
-    # required name argment
-    # requiredNamed = parser.add_argument_group('Either one of these argument is required')
-    # requiredNamed.add_argument('--expect-cells',type=int, help='<INT>:  Expected number of cells.')
-    # requiredNamed.add_argument('--count-threshold', type=int,
-    #                     help='Output the whitelist in Cellranger style')
-
-    # Optional positional argument
-    #parser.add_argument('opt_pos_arg', type=int, nargs='?',help)
 
     # Optional argument
     parser.add_argument('--SIQ_thres', type=float, default=DEFAULT_INPUT['SIQ_thres'],
@@ -68,9 +71,6 @@ def parse_arg():
     parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
                         help='Output filename')
 
-
-
-
     # Developer only argument
     Dev_arg = parser.add_argument_group('For the developers only:')
     Dev_arg.add_argument('--test_mode', action='store_true',
@@ -83,6 +83,13 @@ def parse_arg():
     return args
 
 def parse_format_input_file(args):
+    """Perform the following steps:
+        1. Read two input files as pd.DataFrame
+        2. Filter NanoSplicer prob table using SIQ and strongest assignment prob
+        3. merge two filtered DataFrame (JWRs corrected to NanoSplicer identified ones)
+        4. Further Correct JWR based on JAQ
+        5. reformat the Dataframe (a jwr per row -> a read per row)
+    """
 
     def parse_nanosplicer_prob_table(args):
         """Parse the prob table file output by NanoSplicer as 
@@ -120,7 +127,7 @@ def parse_format_input_file(args):
             d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]
             d['corrected_junction'] = d.apply(
                 lambda x: x.candidates[np.argmax(x.prob_seq_pattern_prior)], axis = 1)
-        print(f'Indexing prob table file ...')
+        logger.info(f'Indexing prob table file ...')
         d.set_index(
             ['reference_name', 'read_id',  'initial_junction'], inplace=True)
         
@@ -132,11 +139,10 @@ def parse_format_input_file(args):
         """
         all_jwr = pd.read_hdf(args.jwr_check_h5, 'data')
         all_jwr = all_jwr.rename(columns={'id':'read_id', 'loc':'initial_junction', 'chrID':'reference_name'})
-        print(f'Indexing jwr file ...')
+        logger.info(f'Indexing jwr file ...')
         all_jwr.set_index(['reference_name', 'read_id',  'initial_junction'], inplace=True)
         all_jwr.drop(columns = all_jwr.columns.difference(['transcript_strand', 'JAQ']))
         return all_jwr
-
 
     def restructure_per_jwr_dataframe(all_jwr):
         """Restructured table:
@@ -187,17 +193,16 @@ def parse_format_input_file(args):
         return all_read
 
     # read the input file (prob_table, all_jwr.h5)
-    print(f'Parsing prob table file ...')
+    logger.info(f'Parsing prob table file ...')
     prob_table = parse_nanosplicer_prob_table(args)
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
-    print(f'Parsing jwr file ...')
+    logger.info(f'Parsing jwr file ...')
     all_jwr = parse_nanosplicer_jwr_h5(args)
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
-
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     # correct JWRs in all_jwrs using NanoSplicer output
-    print(f'Correcting JWRs using NanoSplicer output ...')
+    logger.info(f'Correcting JWRs using NanoSplicer output ...')
     all_jwr = all_jwr.merge(
         prob_table, 
         how='left', 
@@ -205,20 +210,29 @@ def parse_format_input_file(args):
         left_index=True, 
         right_index=True)
     del prob_table
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     # correct JWRs with JAQ > args.JAQ_thres
-    print(f'Correcting JWRs using JAQ threshold ...')
+    logger.info(f'Correcting JWRs using JAQ threshold ...')
     JAQ_pass = (all_jwr.corrected_junction.isnull()) & (all_jwr.JAQ >= args.JAQ_thres)
     all_jwr.loc[JAQ_pass, 'corrected_junction'] =\
         all_jwr.loc[JAQ_pass,].index.get_level_values('initial_junction')  
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
+    # add some text summary
+    add_summary(textwrap.dedent(
+        f'''
+        Total number of JWRs: {len(all_jwr)}
+            Number of JWRs without NanoSplicer identification: {np.sum(all_jwr.corrected_junction.isnull())}
+            Number of JWRs uncorrected after JAQ-based correction: {np.sum((all_jwr.corrected_junction.isnull()) & (all_jwr.JAQ < args.JAQ_thres))}
+        '''
+    ))
+    
     # restructure table jwr per row -> read per raw
-    print('Restructuring table...')
+    logger.info('Restructuring table...')
     all_read = restructure_per_jwr_dataframe(all_jwr)
     del all_jwr
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     return all_read
 
@@ -265,10 +279,21 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
                             'junc_count', 'junc'])   
 
     # all reads group by chr/number of junctions/ junctions()
-    all_reads = all_reads.groupby(level=[0,1]).apply(split_groupby, max_diff) 
-    all_reads = all_reads.droplevel([0,1])
-    return all_reads
+    key, test_df = list(all_reads.groupby(level=[0,1]).__iter__())[1]
+    #all_reads = all_reads.groupby(level=[0,1]).apply(split_groupby, max_diff)
+    df_list = []
+    for k, d in all_reads.groupby(level=[0,1]).__iter__():
+        df_list.append(split_groupby(d, max_diff))
+    del all_reads
+    
+    all_reads = pd.concat(df_list)
 
+    if all_reads.index.nlevels > 3:
+        # sometime, after merging, there are duplicated columns. Not sure about
+        # the reason
+        all_reads = all_reads.droplevel([0,1])
+
+    return all_reads
 
 '''
 Correct junction for each junction in each reads group
@@ -284,7 +309,6 @@ def correct_junction_per_group(all_reads, methods=CORRECTION_ARG['method']):
         all_reads: pd.DataFrame (will reset index inside the input df)
         method: choose from 'majority_vote' and 'probability'
     """
-
     # work on group_single, which is a copy 
     def correct_line(df_line, correct_dict):
         """Read a single line of the dataframe
@@ -296,9 +320,11 @@ def correct_junction_per_group(all_reads, methods=CORRECTION_ARG['method']):
 
     all_reads.reset_index(drop=False, inplace = True)
     # count read in group
+
     all_reads['group_count'] = all_reads.groupby(
         ['reference_name','junc_count','sub_group']).JAQ.transform('count')
     
+
     groups_gb_obj = all_reads.groupby(['reference_name', 'junc_count','sub_group', 'group_count'])
     # determine the order in group. Group with more reads comes first.
     keys_ordered = sorted(groups_gb_obj.groups.keys(), key = lambda x: x[3], reverse =True)
@@ -426,60 +452,90 @@ def correct_junction_probability(
     else:
         return None
 
+
+
 def output_h5_file_corrected_reads(d, filename, key='data'):
     output_d = d[d.all_corrected == True].copy()
     output_d['junc_start'] = output_d.corrected_junction.apply(lambda y: tuple([x[0] for x in y]))
     output_d['junc_end'] = output_d.corrected_junction.apply(lambda y: tuple([x[1] for x in y]))
     output_d.to_hdf(filename, key)
     output_d.to_csv(filename+'.csv')
+    logger.info(helper.green_msg(f"Output saved as {args.output_fn}!"))
 
 def main(args):
-    print("Formatting input data...")
+    logger.info("Formatting input data...")
     # get input data and reformat
     all_reads = parse_format_input_file(args)
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
-    
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
-    print('Grouping reads...')
+    # add some text summary
+    add_summary(textwrap.dedent(
+        f'''
+        After correcting using NanoSplicer and JAQ >= {args.JAQ_thres}:
+            Total number of reads: {len(all_reads)}
+            Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
+        '''))
+
+
+    logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
 
-    print('Correcting reads in each group...')
+    logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=CORRECTION_ARG['method'])
     
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
-    helper.green_msg(f"Output saved as {args.output_fn}!")
+    
+    # add some text summary
+    add_summary(textwrap.dedent(
+        f'''
+        After correcting based on nearby JWRs:
+            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}
+        '''))
 
 def test(args):
     # test setup
     cached_data = \
         '/home/ubuntu/data/github_repo/youyupei/NanoIsoform/test/large_set.h5'
-    
-    print('Reading input dataset...')
+    logger.info('Reading input dataset...')
     helper.check_memory_usage()
     all_reads = pd.read_hdf(cached_data, 'data')
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
+    # add some text summary
+    add_summary(textwrap.dedent(
+        f'''
+        After correcting using NanoSplicer and JAQ >= {args.JAQ_thres}:
+            Total number of reads: {len(all_reads)}
+            Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
+        '''))
 
-    print('Grouping reads...')
+    logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
-    print('Correcting reads in each group...')
+    logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=CORRECTION_ARG['method'])
-    print(f'Finished. Mem: {helper.check_memory_usage()}, Time:{helper.check_runtime()}')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
     
+
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
-    helper.green_msg(f"Output saved as {args.output_fn}!")
+
+    # add some text summary
+    add_summary(textwrap.dedent(
+        f'''After correcting based on nearby JWRs:
+            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}
+        '''))
+
 
 if __name__ == '__main__':
     args = parse_arg()
@@ -489,3 +545,5 @@ if __name__ == '__main__':
         test(args)
     else:
         main(args)
+    
+    print('Summary:\n',summary_msg)
