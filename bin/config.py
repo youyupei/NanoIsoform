@@ -8,7 +8,6 @@ DEFAULT_INPUT = {
     'output_fn': 'NanoIsoform_out.h5'
 }
 
-
 #####################################################
 # grouping parameters
 #####################################################
@@ -16,7 +15,6 @@ GROUP_ARG = {
     # max distence allowed when grouping the nearby junction
     'max_diff': 30
 }
-
 
 #####################################################
 # correst junction based on nearby corrected jwrs

@@ -6,7 +6,7 @@ import textwrap
 import pandas as pd
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
-pd.set_option('display.max_colwidth', 10)
+pd.set_option('display.max_colwidth', 50)
 from collections import defaultdict, Counter
 import sys
 import os
@@ -75,7 +75,12 @@ def parse_arg():
     Dev_arg = parser.add_argument_group('For the developers only:')
     Dev_arg.add_argument('--test_mode', action='store_true',
                         help='Run in test mode.')
-
+    Dev_arg.add_argument('--no_nearby_jwr_correction', action = 'store_true',
+                        help= textwrap.dedent(
+                            '''For test purpose only: Turn off the correction based on nearby jwr.
+                            Note that reads with uncorrected jwr(s) will not appear in the 
+                            output.
+                            '''))
     args = parser.parse_args()
 
     # check file 
@@ -115,18 +120,19 @@ def parse_format_input_file(args):
         #d['candidate_sequence_motif_preference'] = d.candidate_sequence_motif_preference.apply(format_tuple_string)
         
         
+        
         if args.uniform_prior:
             d['prob_uniform_prior'] = d.prob_uniform_prior.apply(format_tuple_string)
             d['best_prob'] = d.prob_uniform_prior.apply(max)
             d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]
-            d['corrected_junction'] = d.apply(
-                lambda x: x.candidates[np.argmax(x.prob_uniform_prior)], axis = 1)
+            d['corrected_junction'] = list(d.apply(
+                lambda x: x.candidates[np.argmax(x.prob_uniform_prior)], axis = 1))
         else:
-
             d['prob_seq_pattern_prior'] = d.prob_seq_pattern_prior.apply(format_tuple_string)
-            d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]
-            d['corrected_junction'] = d.apply(
-                lambda x: x.candidates[np.argmax(x.prob_seq_pattern_prior)], axis = 1)
+            d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]       
+            d['corrected_junction'] = list(d.apply(
+                lambda x: x.candidates[np.argmax(x.prob_seq_pattern_prior)], axis = 1))
+            
         logger.info(f'Indexing prob table file ...')
         d.set_index(
             ['reference_name', 'read_id',  'initial_junction'], inplace=True)
@@ -482,12 +488,17 @@ def main(args):
     all_reads.reset_index(drop=False, inplace = True)
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
+    if args.no_nearby_jwr_correction:
+        all_reads[all_reads.corrected.apply(all)].to_hdf(args.output_fn, key='data')
+        all_reads[all_reads.corrected.apply(all)].to_csv(args.output_fn+'.csv')
+        return None
 
     logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=CORRECTION_ARG['method'])
-    
+    print(corrected_d)
+    print(corrected_d.junc.apply(len))
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
@@ -516,6 +527,11 @@ def test(args):
             Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
         '''))
 
+    if args.no_nearby_jwr_correction:
+        all_reads[all_reads.corrected.apply(all)].to_hdf(args.output_fn, key='data')
+        all_reads[all_reads.corrected.apply(all)].to_csv(args.output_fn+'.csv')
+        return None
+        
     logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
@@ -525,6 +541,7 @@ def test(args):
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=CORRECTION_ARG['method'])
+    
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
     
 
