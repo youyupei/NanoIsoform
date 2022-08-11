@@ -372,8 +372,8 @@ def correct_junction_per_group(all_reads, methods):
                     corrected_junc = correct_junction_probability(
                         counter, j, 
                         max_diff=CORRECTION_ARG['dist'],
-                        min_prop=CORRECTION_ARG['maj_vot_min_prop'], 
-                        min_correct_read=CORRECTION_ARG['maj_vot_min_count'])
+                        min_prop=CORRECTION_ARG['prob_samp_min_prop'], 
+                        min_correct_read=CORRECTION_ARG['prob_samp_min_count'])
                     
                     correct_dict[j] = corrected_junc
 
@@ -463,12 +463,15 @@ def correct_junction_probability(
 
     values = np.array([counter[k] for k in keys])
     prop = values/sum(values)
-    if prop.max() >= min_prop and values.max() >= min_correct_read:
-        return keys[np.random.choice(np.array(range(len(keys)))[prop == prop.max()])]
+    pass_key_idx = (prop >= min_prop) & (values >= min_correct_read)
+    prop = prop[pass_key_idx]
+    values = values[pass_key_idx]
+    keys = [x for x,y in zip(keys, pass_key_idx) if y]
+
+    if len(prop):
+        return keys[np.random.choice(range(len(keys)), p = prop/sum(prop))]
     else:
         return None
-
-
 
 def output_h5_file_corrected_reads(d, filename, key='data'):
     output_d = d[d.all_corrected == True].copy()
