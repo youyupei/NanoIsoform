@@ -66,6 +66,16 @@ def parse_arg():
                             will be used as "corrected junction" if the Junction Alignment Quality (JAQ) 
                             of the initial mapping >= this threshold. 
                             '''))
+    
+    parser.add_argument('--nearby_jwr_correction_mode', type=str, choices=['majority_vote', 'probability'], default=CORRECTION_ARG['method'],
+                        help= textwrap.dedent(
+                            '''
+                            How to correct jwr based on nearby corrected jwrs.
+                            'majority_vote': Corrected to most supported junction nearby
+                            'probability': randomly choose from the nearby junctions with 
+                                            probability based on the proportion of support. 
+                            '''))
+
     parser.add_argument('--uniform_prior', action='store_true',
                         help='Output the whitelist in Cellranger style')
     parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
@@ -309,7 +319,7 @@ For each junction:
     methods 2 (probability): Look for nearby mapped junctions with corrected identification,
                 and correct uncorrected junction based on probability 
 '''
-def correct_junction_per_group(all_reads, methods=CORRECTION_ARG['method']):
+def correct_junction_per_group(all_reads, methods):
     """Correct Junction in each group generated in group_reads
     Args:
         all_reads: pd.DataFrame (will reset index inside the input df)
@@ -469,6 +479,7 @@ def output_h5_file_corrected_reads(d, filename, key='data'):
     logger.info(helper.green_msg(f"Output saved as {args.output_fn}!"))
 
 def main(args):
+    print(args)
     logger.info("Formatting input data...")
     # get input data and reformat
     all_reads = parse_format_input_file(args)
@@ -496,7 +507,7 @@ def main(args):
     logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
-                    all_reads, methods=CORRECTION_ARG['method'])
+                    all_reads, methods=args.nearby_jwr_correction_mode)
     print(corrected_d)
     print(corrected_d.junc.apply(len))
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
@@ -540,7 +551,7 @@ def test(args):
     logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
-                    all_reads, methods=CORRECTION_ARG['method'])
+                    all_reads, methods=args.nearby_jwr_correction_mode)
     
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
     
