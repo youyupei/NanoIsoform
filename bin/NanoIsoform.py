@@ -231,6 +231,7 @@ def parse_format_input_file(args):
     # correct JWRs with JAQ > args.JAQ_thres
     logger.info(f'Correcting JWRs using JAQ threshold ...')
     JAQ_pass = (all_jwr.corrected_junction.isnull()) & (all_jwr.JAQ >= args.JAQ_thres)
+    NanoSplicer_skipped = np.sum(all_jwr.corrected_junction.isnull())
     all_jwr.loc[JAQ_pass, 'corrected_junction'] =\
         all_jwr.loc[JAQ_pass,].index.get_level_values('initial_junction')  
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
@@ -239,7 +240,7 @@ def parse_format_input_file(args):
     add_summary(textwrap.dedent(
         f'''
         Total number of JWRs: {len(all_jwr)}
-            Number of JWRs without NanoSplicer identification: {np.sum(all_jwr.corrected_junction.isnull())}
+            Number of JWRs without NanoSplicer identification: {NanoSplicer_skipped}
             Number of JWRs uncorrected after JAQ-based correction: {np.sum((all_jwr.corrected_junction.isnull()) & (all_jwr.JAQ < args.JAQ_thres))}
         '''
     ))
@@ -511,8 +512,6 @@ def main(args):
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=args.nearby_jwr_correction_mode)
-    print(corrected_d)
-    print(corrected_d.junc.apply(len))
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
