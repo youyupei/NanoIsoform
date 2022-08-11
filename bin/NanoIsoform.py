@@ -434,7 +434,7 @@ def correct_junction_majority_vote(counter, junc,
         return None
 
 def correct_junction_probability(
-                        counter, j, 
+                        counter, junc, 
                         max_diff=CORRECTION_ARG['dist'],
                         min_prop=CORRECTION_ARG['prob_samp_min_prop'], 
                         min_correct_read=CORRECTION_ARG['prob_samp_min_count']):
