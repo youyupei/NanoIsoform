@@ -2,6 +2,7 @@
 
 # goal correct JWR without NanoSplicer output
 import argparse
+import importlib
 import warnings
 import textwrap
 import pandas as pd
@@ -12,34 +13,10 @@ from tqdm import tqdm
 import numpy as np
 import logging
 
+from config import *
 import helper
 from helper import add_summary
-from config import *
-from __restructure_input import *
-from __group_read import *
 
-# ACTION REQUIRED FOR THE FINAL VERSION
-#   remove levelname, filname, funcName, lineno for the final version
-logging.basicConfig(format=LOG_FORMAT, datefmt='%a, %d %b %Y %H:%M:%S')
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-logger.info('Start running...')
-
-
-# set up pandas
-warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
-pd.set_option('display.max_rows', 500)
-pd.set_option('display.max_columns', 500)
-pd.set_option('display.max_colwidth', 50)
-
-# store some useful stats during the run
-# global summary_msg
-# summary_msg = ''
-
-# def add_summary(msg):
-#     global summary_msg
-#     summary_msg += msg + '\n'
-    
 def parse_arg():
     parser = argparse.ArgumentParser(
         description=textwrap.dedent(
@@ -89,6 +66,8 @@ def parse_arg():
                         help='Output the whitelist in Cellranger style')
     parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
                         help='Output filename')
+    parser.add_argument('--cfg_fn', type=str, default='',
+                        help='Filename of customised config file.')
 
     # Developer only argument
     Dev_arg = parser.add_argument_group('For the developers only:')
@@ -100,71 +79,40 @@ def parse_arg():
                             Note that reads with uncorrected jwr(s) will not appear in the 
                             output.
                             '''))
+    
     args = parser.parse_args()
+    # update config if provided
+    if args.cfg_fn:
+        #mdl = importlib.import_module(args.cfg_fn)
+        spec = importlib.util.spec_from_file_location(
+                os.path.basename(args.cfg_fn).split('.')[0], args.cfg_fn)
+        mdl = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mdl)
+        if "__all__" in mdl.__dict__:
+            names = mdl.__dict__["__all__"]
+        else:
+            names = [x for x in mdl.__dict__ if not x.startswith("_")]
+        globals().update({k: getattr(mdl, k) for k in names})
+        args = parser.parse_args()
 
     # check file 
     helper.check_exist([args.prob_table, args.jwr_check_h5])
     return args
 
+args = parse_arg()
+from __restructure_input import *
+from __group_and_correct import *
+# ACTION REQUIRED FOR THE FINAL VERSION
+#   remove levelname, filname, funcName, lineno for the final version
+logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+# set up pandas
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
+pd.set_option('display.max_rows', 500)
+pd.set_option('display.max_columns', 500)
+pd.set_option('display.max_colwidth', 50)
 
-def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
-    """group reads based on their junctions
-    Args:
-        all_reads (pandas.DataFrame): The dataframe output by restructure_per_jwr_datafrome
-        function.
-        max_diff (INT): maximum different allowed when grouping closeby junction
-
-    Output:
-        read_group (dataframe or list): indicate the membership of each group
-    """
-    def split_groupby(df, max_diff):
-        org_d = df.copy()
-        temp_d = df.index.unique().to_frame().copy()
-        junc_array = temp_d.junc.apply(lambda x: np.array(x).flatten())
-        junc_array = np.vstack(junc_array)
-        test = np.vstack([get_groups(col, max_diff) for col in junc_array.T]).T
-        group = np.unique(test, axis=0, return_inverse=True)[1]
-        temp_d['sub_group'] = group
-        merge_d = org_d.merge(temp_d, 'left', left_index=True, right_index=True)
-        merge_d = merge_d.drop(columns = ['reference_name', 'junc_count', 'junc'])
-        return merge_d
-    
-    def get_groups(array, max_diff = max_diff):
-        # add index
-        array_indexed = np.vstack([np.arange(len(array)), array]).T
-        # sort 
-        array_indexed = array_indexed[array_indexed[:, 1].argsort()]
-        # get group
-        rst_group = __get_groups_from_sorted_array(array_indexed[:,1])
-        # revert oder
-        return rst_group[array_indexed[:, 0].argsort()]
-
-    def __get_groups_from_sorted_array(array, max_diff=max_diff):
-            # note that array has to be sorted
-            # padding
-            array_pad = np.hstack([array[0], array])
-            return np.cumsum(np.abs(array_pad[1:] - array_pad[:-1]) > max_diff)
-        
-    # the grouping 
-    all_reads = all_reads.set_index(['reference_name',
-                            'junc_count', 'junc'])   
-
-    # all reads group by chr/number of junctions/ junctions()
-    key, test_df = list(all_reads.groupby(level=[0,1]).__iter__())[1]
-    #all_reads = all_reads.groupby(level=[0,1]).apply(split_groupby, max_diff)
-    df_list = []
-    for k, d in all_reads.groupby(level=[0,1]).__iter__():
-        df_list.append(split_groupby(d, max_diff))
-    del all_reads
-    
-    all_reads = pd.concat(df_list)
-
-    if all_reads.index.nlevels > 3:
-        # sometime, after merging, there are duplicated columns. Not sure about
-        # the reason
-        all_reads = all_reads.droplevel([0,1])
-
-    return all_reads
 
 # output 
 def output_h5_file_corrected_reads(d, filename, key='data', csv_output=OUTPUT_CSV):
@@ -181,13 +129,10 @@ def output_h5_file_corrected_reads(d, filename, key='data', csv_output=OUTPUT_CS
 
 
 def main(args):
-    print("Argument specified:")
-    print(args)
     logger.info("Formatting input data...")
     # get input data and reformat
     all_reads = parse_format_input_file(args)
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
+    logger.info(helper.mem_time_msg())
     # add some text summary
     add_summary(textwrap.dedent(
         f'''
@@ -199,19 +144,19 @@ def main(args):
     logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
+    logger.info(helper.mem_time_msg())
     if args.no_nearby_jwr_correction:
         all_reads[all_reads.corrected.apply(all)].to_hdf(args.output_fn, key='data')
         all_reads[all_reads.corrected.apply(all)].to_csv(args.output_fn+'.csv')
         return None
+    else:
+        pass
 
     logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=args.nearby_jwr_correction_mode)
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
+    logger.info(helper.mem_time_msg())
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
     
     # add some text summary
@@ -228,8 +173,7 @@ def test(args):
     logger.info('Reading input dataset...')
     helper.check_memory_usage()
     all_reads = pd.read_hdf(cached_data, 'data')
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
+    logger.info(helper.mem_time_msg())
     # add some text summary
     add_summary(textwrap.dedent(
         f'''
@@ -246,15 +190,13 @@ def test(args):
     logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
     all_reads.reset_index(drop=False, inplace = True)
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
+    logger.info(helper.mem_time_msg())
     logger.info('Correcting reads in each group...')
     # get corrected junction for groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=args.nearby_jwr_correction_mode)
     
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
+    logger.info(helper.mem_time_msg())
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
 
     # add some text summary
@@ -263,15 +205,11 @@ def test(args):
             Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}
         '''))
 
-
 if __name__ == '__main__':
-    args = parse_arg()
+    print(args)
     if args.test_mode:
-        # test command line input
-        print(args)
         test(args)
     else:
         main(args)
-    
 
     print('\n\nSummary:\n', helper.summary_msg)

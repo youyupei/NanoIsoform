@@ -10,9 +10,10 @@ import logging
 
 import helper
 from helper import add_summary
-from config import *
+# inport configs
+from NanoIsoform import *
 
-logging.basicConfig(format=LOG_FORMAT, datefmt='%a, %d %b %Y %H:%M:%S')
+logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -168,6 +169,4 @@ def parse_format_input_file(args):
     logger.info('Restructuring table...')
     all_read = restructure_per_jwr_dataframe(all_jwr)
     del all_jwr
-    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-
     return all_read

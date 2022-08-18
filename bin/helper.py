@@ -7,6 +7,13 @@ import os
 import sys
 import psutil
 import time
+import logging
+
+from config import *
+
+logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 GLOBAL_START_TIME = time.time()
 
@@ -31,6 +38,10 @@ def check_runtime(start_time = GLOBAL_START_TIME, print_it=False):
     if print_it:
         print(f'''Current runtime: {int(hours):0>2}:{int(minutes):0>2}:{int(seconds)}''')
     return f'{int(hours):0>2}:{int(minutes):0>2}:{int(seconds)}'
+
+def mem_time_msg():
+    return(f'Finished. Memory used: {check_memory_usage()}, Total runtime:{check_runtime()}')
+
     
 def reverse_complement(seq):
 	'''

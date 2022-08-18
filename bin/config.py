@@ -42,7 +42,11 @@ CORRECTION_ARG = {
 #####################################################
 
 # format for the logging (stdout)
+# LOG_FORMAT = \
+# '[%(asctime)s] %(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s'
 LOG_FORMAT = \
-'[%(asctime)s] %(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s'
+'(%(asctime)s) %(message)s'
+DATE_FORMATE = '%d/%m/%Y %H:%M:%S' #'%a, %d %b %Y %H:%M:%S'
+
 
 OUTPUT_CSV = True
