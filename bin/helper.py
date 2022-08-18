@@ -10,6 +10,11 @@ import time
 
 GLOBAL_START_TIME = time.time()
 
+summary_msg = ''
+def add_summary(msg):
+    global summary_msg
+    summary_msg += msg + '\n'
+
 def check_memory_usage(unit = 'G', print_it=False):
     if unit == 'M':
         if print_it:
@@ -127,7 +132,6 @@ def check_exist(file_list):
             err_msg(f"Error: can not find file '{fn}'")
     if exit_code == 1:
         sys.exit()
-
 
 def err_msg(msg):
 	CRED = '\033[91m'

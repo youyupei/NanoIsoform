@@ -36,3 +36,13 @@ CORRECTION_ARG = {
         'prob_samp_min_count': 5
 }
 
+
+#####################################################
+# output format
+#####################################################
+
+# format for the logging (stdout)
+LOG_FORMAT = \
+'[%(asctime)s] %(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s'
+
+OUTPUT_CSV = True
