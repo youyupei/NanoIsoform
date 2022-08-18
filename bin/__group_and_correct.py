@@ -91,14 +91,19 @@ def correct_junction_per_group(all_reads, methods):
         method: choose from 'majority_vote' and 'probability'
     """
     # work on group_single, which is a copy 
-    def correct_line(df_line, correct_dict):
+    def correct_line(df_line, correct_dict, methods=methods):
         """Read a single line of the dataframe
         return a currected list of junction for each read
         """
-        return \
-        tuple([x if y else correct_dict[x] for x,y in zip(
-            df_line.junc, df_line.corrected)])
-    
+        if methods == 'majority_vote':
+            return \
+            tuple([x if y else correct_dict[x] for x,y in zip(
+                df_line.junc, df_line.corrected)])
+        if methods == 'probability':
+            return \
+            tuple([x if y else next(correct_dict[x]) for x,y in zip(
+                df_line.junc, df_line.corrected)])
+               
     def generate_df_per_junction(df, key):
         """
         Process each df and key in pandas.groupby.__iter__() output
@@ -172,8 +177,8 @@ def correct_junction_per_group(all_reads, methods):
 
         # return None if no nearby corrected junction
         if not len(keys):
-            return None
-
+            while True:
+                yield None
         values = np.array([counter[k] for k in keys])
         prop = values/sum(values)
         pass_key_idx = (prop >= min_prop) & (values >= min_correct_read)
@@ -182,9 +187,11 @@ def correct_junction_per_group(all_reads, methods):
         keys = [x for x,y in zip(keys, pass_key_idx) if y]
 
         if len(prop):
-            return keys[np.random.choice(range(len(keys)), p = prop/sum(prop))]
+            while True:
+                yield keys[np.random.choice(range(len(keys)), p = prop/sum(prop))]
         else:
-            return None
+            while True:
+                yield None
 
     all_reads.reset_index(drop=False, inplace = True)
     
@@ -192,13 +199,12 @@ def correct_junction_per_group(all_reads, methods):
     all_reads['group_count'] = all_reads.groupby(
         ['reference_name','junc_count','sub_group']).JAQ.transform('count')
     
-
     groups_gb_obj = all_reads.groupby(['reference_name', 'junc_count','sub_group', 'group_count'])
     # determine the order in group. Group with more reads comes first.
     keys_ordered = sorted(groups_gb_obj.groups.keys(), key = lambda x: x[3], reverse =True)
 
     # dic structure: group_key:Counter
-    all_junc_counter = defaultdict(Counter)
+    all_junc_counter = Counter()
     corrected_group = []
     for key in tqdm(keys_ordered): # can potentially do multiprocessing
         # dictionary for correction
@@ -208,7 +214,7 @@ def correct_junction_per_group(all_reads, methods):
         correct_dict = {}
         for counter, junc in generate_df_per_junction(group_single, key):
             # save counts of certain subgroup
-            all_junc_counter[key] += counter
+            all_junc_counter += counter
 
             for j in junc:
                 if methods == 'majority_vote':
@@ -225,8 +231,7 @@ def correct_junction_per_group(all_reads, methods):
                         counter, j, 
                         max_diff=CORRECTION_ARG['dist'],
                         min_prop=CORRECTION_ARG['prob_samp_min_prop'], 
-                        min_correct_read=CORRECTION_ARG['prob_samp_min_count'])
-                    
+                        min_correct_read=CORRECTION_ARG['prob_samp_min_count'])   
                     correct_dict[j] = corrected_junc
 
         group_single['corrected_junction'] = \
@@ -236,6 +241,19 @@ def correct_junction_per_group(all_reads, methods):
         corrected_group.append(group_single)
     corrected_d = pd.concat(corrected_group)
     corrected_d.drop(columns=['junc_start', 'junc_end', 'corrected'], inplace=True)
-    return corrected_d
+    return corrected_d, all_junc_counter
 
 
+# def small_group_jwr_recover(df, corrected_counter):
+#     """Recovering the uncorrected JWRs using cross-group information
+
+#     Args:
+#         df (pd.DataFrame): DataFrame containing reads corrected by
+#             * NanoSplicer
+#             * JAQ-based approach
+#             * Nearby-JWR-based correct in group with sufficient reads
+#         corrected_counter (collections.Counter): Counts of unique junctions 
+#             Supported by:
+#                 * JWRs corrected by NanoSplicer
+#                 * JAQ-based approach
+#     """
