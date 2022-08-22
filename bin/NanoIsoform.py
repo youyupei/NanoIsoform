@@ -112,7 +112,7 @@ warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.max_colwidth', 50)
-
+  
 
 # output 
 def output_h5_file_corrected_reads(d, filename, key='data', csv_output=OUTPUT_CSV):
@@ -154,7 +154,7 @@ def main(args):
 
     logger.info('Correcting reads in each group...')
     # correct junction within large groups
-    corrected_d, all_junc_counter = correct_junction_per_group(
+    corrected_d = correct_junction_per_group(
                     all_reads, methods=args.nearby_jwr_correction_mode)
     
     logger.info('Recovering remaining reads using cross-group information...')
@@ -165,7 +165,7 @@ def main(args):
     add_summary(textwrap.dedent(
         f'''
         After correcting based on nearby JWRs:
-            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}
+            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
         '''))
 
 def test(args):
@@ -195,7 +195,7 @@ def test(args):
     logger.info(helper.mem_time_msg())
     logger.info('Correcting reads in each group...')
     # get corrected junction for groups
-    corrected_d, all_junc_counter = correct_junction_per_group(
+    corrected_d = correct_junction_per_group(
                     all_reads, methods=args.nearby_jwr_correction_mode)
     
     logger.info(helper.mem_time_msg())
@@ -204,7 +204,7 @@ def test(args):
     # add some text summary
     add_summary(textwrap.dedent(
         f'''After correcting based on nearby JWRs:
-            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}
+            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
         '''))
 
 if __name__ == '__main__':

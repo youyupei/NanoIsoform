@@ -28,12 +28,12 @@ CORRECTION_ARG = {
         # minimum proportion of corrected jwrs required for the major junction
         'maj_vot_min_prop':0.8,
         # minimum count of corrected jwrs required for the major junction
-        'maj_vot_min_count': 10,
+        'maj_vot_min_count': 100,
     # probability sampleing mode
         # minimum proportion of corrected jwrs required for any minor junction 
         # to be considered
         'prob_samp_min_prop': 0.1,
-        'prob_samp_min_count': 5
+        'prob_samp_min_count': 20
 }
 
 
