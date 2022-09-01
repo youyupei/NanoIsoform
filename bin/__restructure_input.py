@@ -95,13 +95,15 @@ def parse_format_input_file(args):
         Note: In the junc start and junce end, the mapped splice sites were recorded
         if they have not been corrected.
         """
-        ref_names,  read_ids,  transcript_strands, num_junc, juncs,\
-        junc_starts, junc_ends, processed, JAQs= [],[],[],[],[],[],[],[],[]
+        ref_names, read_ids, transcript_strands, num_junc, juncs,\
+        junc_starts, junc_ends, processed, JAQs, high_conf =\
+             [],[],[],[],[],[],[],[],[],[]
         for key, df in all_jwr.groupby(level=1):
             ref_names.append(df.index.get_level_values(0)[0])
             read_ids.append(df.index.get_level_values(1)[0])
             JAQs.append(tuple(df.JAQ))
             num_junc.append(len(df.JAQ))
+            high_conf.append(all(df.high_confident_junction))
             transcript_strands.append(df.transcript_strand[0])
             
             identified = tuple(~df.corrected_junction.isnull())
@@ -123,7 +125,8 @@ def parse_format_input_file(args):
                                 'junc_start':junc_starts, 
                                 'junc_end':junc_ends, 
                                 'corrected': processed, 
-                                'JAQ':JAQs
+                                'JAQ':JAQs,
+                                'high_conf':high_conf
         })
 
         return all_read
@@ -147,6 +150,12 @@ def parse_format_input_file(args):
         right_index=True)
     del prob_table
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
+    
+
+    # high-confident junction
+    all_jwr['high_confident_junction'] =\
+         (all_jwr.index.get_level_values('initial_junction') == all_jwr.corrected_junction) &\
+         (all_jwr.JAQ >= args.JAQ_thres)
 
     # correct JWRs with JAQ > args.JAQ_thres
     logger.info(f'Correcting JWRs using JAQ threshold ...')
