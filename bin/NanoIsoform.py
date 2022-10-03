@@ -156,11 +156,10 @@ def main(args):
     # correct junction within large groups
     corrected_d = correct_junction_per_group(
                     all_reads, methods=args.nearby_jwr_correction_mode)
-    
     logger.info('Recovering remaining reads using cross-group information...')
     logger.info(helper.mem_time_msg())
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
-    
+    print(corrected_d)
     # add some text summary
     add_summary(textwrap.dedent(
         f'''

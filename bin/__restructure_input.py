@@ -67,7 +67,8 @@ def parse_format_input_file(args):
         d.set_index(
             ['reference_name', 'read_id',  'initial_junction'], inplace=True)
         
-        d.drop(columns = d.columns.difference(['corrected_junction']), inplace = True)
+        # select which columns in NanoSplicer output to keep here
+        d.drop(columns = d.columns.difference(['corrected_junction', 'SIQ', 'best_prob']), inplace = True)
         return d
 
     def parse_nanosplicer_jwr_h5(args):
@@ -96,14 +97,14 @@ def parse_format_input_file(args):
         if they have not been corrected.
         """
         ref_names, read_ids, transcript_strands, num_junc, juncs,\
-        junc_starts, junc_ends, processed, JAQs, high_conf =\
-             [],[],[],[],[],[],[],[],[],[]
+        junc_starts, junc_ends, processed, JAQs, high_conf, SIQ, best_prob =\
+             [],[],[],[],[],[],[],[],[],[],[],[]
         for key, df in all_jwr.groupby(level=1):
             ref_names.append(df.index.get_level_values(0)[0])
             read_ids.append(df.index.get_level_values(1)[0])
             JAQs.append(tuple(df.JAQ))
             num_junc.append(len(df.JAQ))
-            high_conf.append(all(df.high_confident_junction))
+            high_conf.append(tuple(df.high_confident_junction))
             transcript_strands.append(df.transcript_strand[0])
             
             identified = tuple(~df.corrected_junction.isnull())
@@ -116,6 +117,8 @@ def parse_format_input_file(args):
             juncs.append(tuple(df_junc))
             junc_starts.append(tuple([x for x,y in df_junc]))
             junc_ends.append(tuple([y for x,y in df_junc]))
+            SIQ.append(tuple(df.SIQ))
+            best_prob.append(tuple(df.best_prob))
 
         all_read = pd.DataFrame({'reference_name':ref_names,  
                                 'read_id':read_ids,  
@@ -126,7 +129,9 @@ def parse_format_input_file(args):
                                 'junc_end':junc_ends, 
                                 'corrected': processed, 
                                 'JAQ':JAQs,
-                                'high_conf':high_conf
+                                'high_conf':high_conf,
+                                'SIQ':SIQ,
+                                'best_prob': best_prob
         })
 
         return all_read
@@ -145,12 +150,10 @@ def parse_format_input_file(args):
     all_jwr = all_jwr.merge(
         prob_table, 
         how='left', 
-        # right_on = ['corrected_junction'],
-        left_index=True, 
+        #right_on = ['SIQ', 'best_prob'],
+        left_index=True,
         right_index=True)
-    del prob_table
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-    
 
     # high-confident junction
     all_jwr['high_confident_junction'] =\

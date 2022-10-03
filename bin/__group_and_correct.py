@@ -258,9 +258,6 @@ def correct_junction_per_group(all_reads, methods):
             while True:
                 yield None
 
-
-
-
     def small_groups_jwr_recover(group_single, all_junc_counter, methods):
         """Recovering the uncorrected JWRs using cross-group information
         Args:
