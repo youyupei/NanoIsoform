@@ -63,11 +63,45 @@ def parse_arg():
                             '''))
 
     parser.add_argument('--uniform_prior', action='store_true',
-                        help='Output the whitelist in Cellranger style')
+                        help='Use uniform prior probability for splice patterns. Recommended for synthetic RNA data (e.g. SIRV, Sequins)')
     parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
                         help='Output filename')
     parser.add_argument('--cfg_fn', type=str, default='',
                         help='Filename of customised config file.')
+                
+
+    # Developer only argument
+    hcjwr_arg = parser.add_argument_group(textwrap.dedent(
+        '''
+        Definition of High-confidence JWR:
+        Note that more stringent threshold than above should be specified. It will be overwritten when less stringet.
+        '''))
+    hcjwr_arg.add_argument('--hcjwr_SIQ_thres', type=float, default=HCJWR['SIQ_thres'],
+                        help= textwrap.dedent(
+                            '''
+                            SIQ threshold for high qualilty squiggle matching 
+                            '''))
+    hcjwr_arg.add_argument('--hcjwr_prob_thres', type=float, default=HCJWR['prob_thres'],
+                        help= textwrap.dedent(
+                            '''
+                            The minimum probability of the NanoSplicer identified junction.
+                            '''))
+    hcjwr_arg.add_argument('--hcjwr_JAQ_thres', type=float, default=HCJWR['JAQ_thres'],
+                        help= textwrap.dedent(
+                            '''
+                            Junction Alignment Quality (JAQ) of the initial mapping >= this threshold. 
+                            '''))
+    hcjwr_arg.add_argument('--hcjwr_consistence', type=bool, default=HCJWR['consistence'],
+                        help= textwrap.dedent(
+                            '''
+                            NanoSplicer junction is consistent with the minimap2 junction.
+                            '''))
+    hcjwr_arg.add_argument('--hcjwr_min_count', type=bool, default=HCJWR['min_count'],
+                        help= textwrap.dedent(
+                            '''
+                            Minimum support from HCJWRs for each unique HC junction.
+                            '''))
+
 
     # Developer only argument
     Dev_arg = parser.add_argument_group('For the developers only:')
@@ -79,6 +113,9 @@ def parse_arg():
                             Note that reads with uncorrected jwr(s) will not appear in the 
                             output.
                             '''))
+
+
+    
     
     args = parser.parse_args()
     # update config if provided
@@ -101,7 +138,10 @@ def parse_arg():
 
 args = parse_arg()
 from __restructure_input import *
-from __group_and_correct import *
+#from __group_and_correct import *
+import jwr_correction
+
+
 # ACTION REQUIRED FOR THE FINAL VERSION
 #   remove levelname, filname, funcName, lineno for the final version
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
@@ -133,13 +173,14 @@ def main(args):
     # get input data and reformat
     all_reads = parse_format_input_file(args)
     logger.info(helper.mem_time_msg())
+    
     # add some text summary
-    add_summary(textwrap.dedent(
-        f'''
-        After correcting using NanoSplicer and JAQ >= {args.JAQ_thres}:
-            Total number of reads: {len(all_reads)}
-            Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
-        '''))
+    # add_summary(textwrap.dedent(
+    #     f'''
+    #     After correcting using NanoSplicer and JAQ >= {args.JAQ_thres}:
+    #         Total number of reads: {len(all_reads)}
+    #         Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
+    #     '''))
 
     logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
@@ -159,7 +200,6 @@ def main(args):
     logger.info('Recovering remaining reads using cross-group information...')
     logger.info(helper.mem_time_msg())
     output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
-    print(corrected_d)
     # add some text summary
     add_summary(textwrap.dedent(
         f'''
@@ -167,50 +207,8 @@ def main(args):
             Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
         '''))
 
-def test(args):
-    # test setup
-    cached_data = \
-        '/home/ubuntu/data/github_repo/youyupei/NanoIsoform/test/large_set.h5'
-    logger.info('Reading input dataset...')
-    helper.check_memory_usage()
-    all_reads = pd.read_hdf(cached_data, 'data')
-    logger.info(helper.mem_time_msg())
-    # add some text summary
-    add_summary(textwrap.dedent(
-        f'''
-        After correcting using NanoSplicer and JAQ >= {args.JAQ_thres}:
-            Total number of reads: {len(all_reads)}
-            Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
-        '''))
-
-    if args.no_nearby_jwr_correction:
-        all_reads[all_reads.corrected.apply(all)].to_hdf(args.output_fn, key='data')
-        all_reads[all_reads.corrected.apply(all)].to_csv(args.output_fn+'.csv')
-        return None
-        
-    logger.info('Grouping reads...')
-    all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
-    all_reads.reset_index(drop=False, inplace = True)
-    logger.info(helper.mem_time_msg())
-    logger.info('Correcting reads in each group...')
-    # get corrected junction for groups
-    corrected_d = correct_junction_per_group(
-                    all_reads, methods=args.nearby_jwr_correction_mode)
-    
-    logger.info(helper.mem_time_msg())
-    output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
-
-    # add some text summary
-    add_summary(textwrap.dedent(
-        f'''After correcting based on nearby JWRs:
-            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
-        '''))
-
 if __name__ == '__main__':
     print(args)
-    if args.test_mode:
-        test(args)
-    else:
-        main(args)
-
+    all_read, uncorrected_jwr = jwr_correction.main(args)
+    all_read.to_hdf(args.output_fn, key='data')
     print('\n\nSummary:\n', helper.summary_msg)

@@ -9,11 +9,26 @@ DEFAULT_INPUT = {
 }
 
 #####################################################
+# HCJWR definition
+#####################################################
+HCJWR = {
+    'JAQ_thres': 0.999, 
+    'SIQ_thres': -0.4, 
+    'prob_thres': 0.8,
+    'min_count':2,
+    'consistence': True
+    # minimap2 result should also agree with NanoSplicer, 
+    # which is hard coded.
+}
+
+
+
+#####################################################
 # grouping parameters
 #####################################################
 GROUP_ARG = {
     # max distence allowed when grouping the nearby junction
-    'max_diff': 30
+    'max_diff': 10
 }
 
 #####################################################
@@ -21,7 +36,7 @@ GROUP_ARG = {
 #####################################################
 CORRECTION_ARG = {
     # max distence allowed when grouping the nearby junction
-    'dist': 20,
+    'dist': 10,
     # how to correct jwrs for each junction
     'method': 'majority_vote', # choose between 'majority_vote' and 'probability'
     # majority voting mode
@@ -47,6 +62,5 @@ CORRECTION_ARG = {
 LOG_FORMAT = \
 '(%(asctime)s) %(message)s'
 DATE_FORMATE = '%d/%m/%Y %H:%M:%S' #'%a, %d %b %Y %H:%M:%S'
-
 
 OUTPUT_CSV = True

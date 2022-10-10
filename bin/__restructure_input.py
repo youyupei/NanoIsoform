@@ -31,6 +31,7 @@ def parse_format_input_file(args):
 
         Args:
             tb_fn (str): NanoSplicer file name
+            correct_to_hcjwr (bool): whether or not correct all junction to HCJWR
         return:
             pandas data from
         """
@@ -52,23 +53,80 @@ def parse_format_input_file(args):
         
         
         if args.uniform_prior:
-            d['prob_uniform_prior'] = d.prob_uniform_prior.apply(format_tuple_string)
-            d['best_prob'] = d.prob_uniform_prior.apply(max)
-            d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]
-            d['corrected_junction'] = list(d.apply(
-                lambda x: x.candidates[np.argmax(x.prob_uniform_prior)], axis = 1))
+            d['prob'] = d.prob_uniform_prior.apply(format_tuple_string)
         else:
-            d['prob_seq_pattern_prior'] = d.prob_seq_pattern_prior.apply(format_tuple_string)
-            d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]       
-            d['corrected_junction'] = list(d.apply(
-                lambda x: x.candidates[np.argmax(x.prob_seq_pattern_prior)], axis = 1))
+            d['prob'] = d.prob_seq_pattern_prior.apply(format_tuple_string)
             
+        d['best_prob'] = d.prob.apply(max)
+        d = d[(d.SIQ >= args.SIQ_thres) & (d.best_prob >= args.prob_thres)]
+        d['corrected_junction'] = list(d.apply(
+            lambda x: x.candidates[np.argmax(x.prob)], axis = 1))
+
         logger.info(f'Indexing prob table file ...')
+
+
+        # # corrected to HCJWR
+        # corrected_junctions = []
+        # hcjwr_candidate_columns = []
+        # hcjwr_candidate_probs = []
+        
+        # # get unique HCJWR and count
+        d['is_hcjwr'] = (d.initial_junction == d.corrected_junction) & \
+                    (d.JAQ >= HCJWR['JAQ_thres']) & \
+                        (d.SIQ >= HCJWR['SIQ_thres']) & \
+                        (d.best_prob >= HCJWR['prob_thres'])
+        # hcjwr_count_df = d[d['is_hcjwr']][['reference_name', 
+        #                     'initial_junction']].value_counts().to_frame('counts').reset_index()
+        # hcjwr_count_df = hcjwr_count_df[
+        #     hcjwr_count_df.counts > HCJWR['min_count']]
+
+
+        # # correct non-HC jwr
+        # logger.info(f'Correcting JWRs based on High-confidence JWRs ...')
+        # for row in tqdm(d.itertuples(), desc='JWRs'):
+        #     if row.is_hcjwr:
+        #         corrected_junctions.append(row.NanoSplicer_junction)
+        #         hcjwr_candidate_columns.append(())
+            
+        #     else:
+        #         # perform corretion
+        #         hcjwr_candidate = set(hcjwr_count_df[
+        #             hcjwr_count_df.reference_name==row.reference_name].initial_junction
+        #             ) & set(row.candidates)
+
+        #         if len(hcjwr_candidate) == 0:
+        #             # completely missed jwr
+        #             corrected_junctions.append((-1,-1))
+        #             hcjwr_candidate_columns.append(())
+        #             hcjwr_candidate_probs.append(())
+
+                    
+        #         elif len(hcjwr_candidate) == 1:
+        #             corrected_junctions.append(hcjwr_candidate.pop())
+        #             hcjwr_candidate_columns.append(())
+        #             hcjwr_candidate_probs.append(())
+
+        #         else:
+        #             hcjwr_candidate = list(hcjwr_candidate)
+        #             hcjwr_candidate_columns.append(tuple(hcjwr_candidate))
+        #             hcjwr_candidate_probs.append(tuple([row.prob[row.candidates.index(x)] for x in hcjwr_candidate]))
+        #             if row.NanoSplicer_junction in hcjwr_candidate:
+        #                 corrected_junctions.append(row.NanoSplicer_junction) 
+        #             elif row.initial_junction in hcjwr_candidate and \
+        #                     row.JAQ > args.JAQ_thres:
+        #                 corrected_junctions.append(row.initial_junction) 
+        #             else:
+        #                 corrected_junctions.append(np.nan) 
+
+        # d['corrected_junction'] = corrected_junctions
+        # d['hcjwr_candidates'] = hcjwr_candidate_columns
+        # d['hcjwr_candidates_probs'] =  hcjwr_candidate_probs
+
         d.set_index(
             ['reference_name', 'read_id',  'initial_junction'], inplace=True)
         
         # select which columns in NanoSplicer output to keep here
-        d.drop(columns = d.columns.difference(['corrected_junction', 'SIQ', 'best_prob']), inplace = True)
+        d.drop(columns = d.columns.difference(['is_hcjwr', 'corrected_junction', 'candidates', 'prob', 'SIQ', 'best_prob']), inplace = True)
         return d
 
     def parse_nanosplicer_jwr_h5(args):
@@ -104,7 +162,7 @@ def parse_format_input_file(args):
             read_ids.append(df.index.get_level_values(1)[0])
             JAQs.append(tuple(df.JAQ))
             num_junc.append(len(df.JAQ))
-            high_conf.append(tuple(df.high_confident_junction))
+            high_conf.append(tuple(df.is_hcjwr))
             transcript_strands.append(df.transcript_strand[0])
             
             identified = tuple(~df.corrected_junction.isnull())
@@ -113,7 +171,7 @@ def parse_format_input_file(args):
             corrected = df.corrected_junction 
             df_junc = \
                 [corrected[i] if identified[i] else mapping[i] for i in range(len(corrected))]
-            df_junc = sorted(df_junc)
+            df_junc = sorted(df_junc)# I think this is a bug
             juncs.append(tuple(df_junc))
             junc_starts.append(tuple([x for x,y in df_junc]))
             junc_ends.append(tuple([y for x,y in df_junc]))
@@ -133,7 +191,6 @@ def parse_format_input_file(args):
                                 'SIQ':SIQ,
                                 'best_prob': best_prob
         })
-
         return all_read
 
     # read the input file (prob_table, all_jwr.h5)
@@ -156,9 +213,12 @@ def parse_format_input_file(args):
     logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
 
     # high-confident junction
-    all_jwr['high_confident_junction'] =\
-         (all_jwr.index.get_level_values('initial_junction') == all_jwr.corrected_junction) &\
-         (all_jwr.JAQ >= args.JAQ_thres)
+    # all_jwr['high_confident_junction'] =\
+    #      (all_jwr.index.get_level_values('initial_junction') == all_jwr.corrected_junction) & \
+    #      (all_jwr.JAQ >= HCJWR['JAQ_thres']) & \
+    #      (all_jwr.SIQ >= HCJWR['SIQ_thres']) & \
+    #      (all_jwr.best_prob >= HCJWR['prob_thres'])
+
 
     # correct JWRs with JAQ > args.JAQ_thres
     logger.info(f'Correcting JWRs using JAQ threshold ...')
@@ -180,5 +240,6 @@ def parse_format_input_file(args):
     # restructure table jwr per row -> read per raw
     logger.info('Restructuring table...')
     all_read = restructure_per_jwr_dataframe(all_jwr)
+    print(all_read)
     del all_jwr
     return all_read

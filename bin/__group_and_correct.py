@@ -119,8 +119,6 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
     all_reads = pd.concat(df_list)
     
     return all_reads
-
-    
    ############################3 
 
     # all_reads = all_reads.set_index(['reference_name','junc_count', 'junc'])   
@@ -174,15 +172,19 @@ def correct_junction_per_group(all_reads, methods):
         Process each df and key in pandas.groupby.__iter__() output
 
         Yields:
-            Counter of junctions (count the corrected junction support)
+            Counter of junctions (count the junction HCJWR support)
             Unique list of uncorrect junction
         """
-        df = df[['junc', 'corrected']].copy()
+        df = df[['junc', 'corrected','high_conf']].copy()
         for i in range(num_of_junc):
             junc = df['junc'].apply(lambda x: x[i])
             corrected = df['corrected'].apply(lambda x: x[i])
+
+            high_conf = df['high_conf'].apply(lambda x: x[i])
+            print(df['high_conf'])
+            exit()
             # yield count of corrected junc and a list of uncorrected junc
-            yield Counter(junc[corrected]), junc[~corrected].unique()
+            yield Counter(junc[high_conf]), junc[~high_conf].unique()
 
     def correct_junction_majority_vote(counter, junc, 
                                     max_diff, min_prop, min_correct_read):
@@ -241,6 +243,47 @@ def correct_junction_per_group(all_reads, methods):
         keys = [k for k in counter.keys() if check_max_diff(k, junc)]
 
         # return None if no nearby corrected junction
+        if not len(keys):
+            while True:
+                yield None
+        values = np.array([counter[k] for k in keys])
+        prop = values/sum(values)
+        pass_key_idx = (prop >= min_prop) & (values >= min_correct_read)
+        prop = prop[pass_key_idx]
+        values = values[pass_key_idx]
+        keys = [x for x,y in zip(keys, pass_key_idx) if y]
+
+        if len(prop):
+            while True:
+                yield keys[np.random.choice(range(len(keys)), p = prop/sum(prop))]
+        else:
+            while True:
+                yield None
+
+
+    def correct_junction_HCJWR(
+                            counter, junc, 
+                            max_diff=CORRECTION_ARG['dist'],
+                            min_hcjwr=HCJWR['min_count']):
+        """Re-correct all JWRs, including ones with NanoSplicer output based on 
+        nearby (with maxdiff) High-confidence JWRs (HCJWRs).
+        
+        Args:
+            counter (collection.Counter): Number of HCJWRs supporting each 
+                                            nearby junction
+            junc (pd.Series): Unique junctions fron non-HC JWRs
+            max_diff (int): Maximal distance to define "nearby junctions"
+            min_hcjwr (int): Minimum number of HCJWR for the each junction
+        Return:
+            corrected location for junction (`junc`) or 
+            None if no near by junction reach the min_prop.
+        """
+        def check_max_diff(junc1, junc2, max_diff=max_diff):
+            return np.all(np.abs([x-y for x,y in zip(junc1, junc2)]) <= max_diff)
+        
+        keys = [k for k in counter.keys() if check_max_diff(k, junc)]
+
+        # return None if no nearby HC junction
         if not len(keys):
             while True:
                 yield None
@@ -317,12 +360,17 @@ def correct_junction_per_group(all_reads, methods):
                                         'non_overlap_group'])
     
     corrected_group = []
+    
+    # iter over non-overlap region
     for _, d_region in tqdm(groups_gb_region.__iter__(), 
                             total = len(groups_gb_region.groups.keys()),
                             desc='Genome region'):
+
         all_junc_counter = Counter()
         uncorrected_group = []
         sub_groups_gb = d_region.groupby(['junc_count', 'sub_group'])
+        
+        # iter over sub_group (same number of junctions with similar location)
         for k,d in tqdm(sub_groups_gb.__iter__(), 
                         leave=False,
                         total = len(sub_groups_gb.groups.keys())):
@@ -330,7 +378,6 @@ def correct_junction_per_group(all_reads, methods):
             # d:'index', 'reference_name', 'non_overlap_group', 'junc_count', 'junc',
                 # 'read_id', 'transcript_strand', 'junc_start', 'junc_end', 'corrected',
                 # 'JAQ', 'sub_group'
-            
             group_single = d.copy()
 
             # dict for correcting uncorrected jwrs
@@ -340,22 +387,9 @@ def correct_junction_per_group(all_reads, methods):
                 all_junc_counter += counter
 
                 for j in junc:
-                    if methods == 'majority_vote':
-                        corrected_junc = correct_junction_majority_vote(
-                            counter, j, 
-                            max_diff=CORRECTION_ARG['dist'],
-                            min_prop=CORRECTION_ARG['maj_vot_min_prop'], 
-                            min_correct_read=CORRECTION_ARG['maj_vot_min_count'])
-                        
-                        correct_dict[j] = corrected_junc
+                    corrected_junc = correct_junction_HCJWR(counter, j)
+                    correct_dict[j] = corrected_junc
 
-                    elif methods == 'probability':
-                        corrected_junc = correct_junction_probability(
-                            counter, j, 
-                            max_diff=CORRECTION_ARG['dist'],
-                            min_prop=CORRECTION_ARG['prob_samp_min_prop'], 
-                            min_correct_read=CORRECTION_ARG['prob_samp_min_count'])   
-                        correct_dict[j] = corrected_junc
 
             group_single['corrected_junction'] = \
                 group_single.apply(correct_line, axis=1, correct_dict= correct_dict) 
