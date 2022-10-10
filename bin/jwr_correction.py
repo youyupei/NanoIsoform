@@ -388,7 +388,7 @@ def main(args):
     
     corrected_all_jwr = pd.concat(corrected_all_jwr)
 
-    corrected_all_jwr.to_hdf('temp.h5', 'corrected_all_jwr')
+    #corrected_all_jwr.to_hdf('temp.h5', 'corrected_all_jwr')
     all_read, uncorrected_jwr = restructure_per_jwr_dataframe(corrected_all_jwr)
     all_read.to_hdf('temp.h5', 'all_read')
     return all_read, uncorrected_jwr
