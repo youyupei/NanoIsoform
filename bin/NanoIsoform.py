@@ -115,8 +115,6 @@ def parse_arg():
                             '''))
 
 
-    
-    
     args = parser.parse_args()
     # update config if provided
     if args.cfg_fn:

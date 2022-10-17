@@ -213,17 +213,18 @@ def single_group_correction(d_grp, args):
             hcjwr_candidate_probs.append(())
 
         else:
+
             candidate = list(row.candidates)
             hcjwr_candidate_probs.append(
                 tuple([row.prob[candidate.index(x)] for x in row.HC_candidates]))
-            if row.NanoSplicer_junction in row.HC_candidates:
-                corrected_junctions.append(row.NanoSplicer_junction) 
-            elif row.initial_junction in row.HC_candidates:
-            # and row.JAQ > args.JAQ_thres:
-                corrected_junctions.append(row.initial_junction) 
-            else:
-                corrected_junctions.append(np.nan) 
-    
+            # if row.NanoSplicer_junction in row.HC_candidates:
+            #     corrected_junctions.append(row.NanoSplicer_junction) 
+            # elif row.initial_junction in row.HC_candidates:
+            # # and row.JAQ > args.JAQ_thres:
+            #     corrected_junctions.append(row.initial_junction) 
+            # else:
+            #     corrected_junctions.append(np.nan) 
+            corrected_junctions.append(np.nan)
     d_grp_to_correct['corrected_junction'] = corrected_junctions
     d_grp_to_correct['hcjwr_candidates_probs'] =  hcjwr_candidate_probs
 
@@ -387,8 +388,7 @@ def main(args):
     logger.info(f'Concating JWR table...')
     
     corrected_all_jwr = pd.concat(corrected_all_jwr)
-
-    #corrected_all_jwr.to_hdf('temp.h5', 'corrected_all_jwr')
+    corrected_all_jwr.to_hdf(args.output_fn, 'corrected_all_jwr')
     all_read, uncorrected_jwr = restructure_per_jwr_dataframe(corrected_all_jwr)
-    all_read.to_hdf('temp.h5', 'all_read')
+    all_read.to_hdf(args.output_fn, 'all_read')
     return all_read, uncorrected_jwr
