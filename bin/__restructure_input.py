@@ -17,6 +17,62 @@ logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+
+def restructure_per_jwr_dataframe(all_jwr):
+    """Restructured table:
+    Columns:
+    'reference_name':reference/chromosom name 
+    'read_id':read_id 
+    'transcript_strand':transcript_strand
+    'junc_count': Number of junctions
+    'junc_start': 5' splice site of each junction
+    'junc_end': 3' splice site of each junction
+    'corrected': whether the corresponding junction is corrected
+    'JAQ': Junction alignment quality
+
+    Note: In the junc start and junce end, the mapped splice sites were recorded
+    if they have not been corrected.
+    """
+    ref_names, read_ids, transcript_strands, num_junc, juncs,\
+    junc_starts, junc_ends, processed, JAQs, high_conf, SIQ, best_prob =\
+            [],[],[],[],[],[],[],[],[],[],[],[]
+    for key, df in all_jwr.groupby(level=1):
+        ref_names.append(df.index.get_level_values(0)[0])
+        read_ids.append(df.index.get_level_values(1)[0])
+        JAQs.append(tuple(df.JAQ))
+        num_junc.append(len(df.JAQ))
+        high_conf.append(tuple(df.is_hcjwr))
+        transcript_strands.append(df.transcript_strand[0])
+        
+        identified = tuple(~df.corrected_junction.isnull())
+        processed.append(identified)
+        mapping = df.index.get_level_values('initial_junction') 
+        corrected = df.corrected_junction 
+        df_junc = \
+            [corrected[i] if identified[i] else mapping[i] for i in range(len(corrected))]
+        df_junc = sorted(df_junc)# I think this is a bug
+        juncs.append(tuple(df_junc))
+        junc_starts.append(tuple([x for x,y in df_junc]))
+        junc_ends.append(tuple([y for x,y in df_junc]))
+        SIQ.append(tuple(df.SIQ))
+        best_prob.append(tuple(df.best_prob))
+
+    all_read = pd.DataFrame({'reference_name':ref_names,  
+                            'read_id':read_ids,  
+                            'transcript_strand':transcript_strands, 
+                            'junc': juncs,
+                            'junc_count': num_junc,
+                            'junc_start':junc_starts, 
+                            'junc_end':junc_ends, 
+                            'corrected': processed, 
+                            'JAQ':JAQs,
+                            'high_conf':high_conf,
+                            'SIQ':SIQ,
+                            'best_prob': best_prob
+    })
+    return all_read
+
+
 def parse_format_input_file(args):
     """Perform the following steps:
         1. Read two input files as pd.DataFrame
@@ -139,59 +195,7 @@ def parse_format_input_file(args):
         all_jwr.drop(columns = all_jwr.columns.difference(['transcript_strand', 'JAQ']))
         return all_jwr
 
-    def restructure_per_jwr_dataframe(all_jwr):
-        """Restructured table:
-        Columns:
-        'reference_name':reference/chromosom name 
-        'read_id':read_id 
-        'transcript_strand':transcript_strand
-        'junc_count': Number of junctions
-        'junc_start': 5' splice site of each junction
-        'junc_end': 3' splice site of each junction
-        'corrected': whether the corresponding junction is corrected
-        'JAQ': Junction alignment quality
 
-        Note: In the junc start and junce end, the mapped splice sites were recorded
-        if they have not been corrected.
-        """
-        ref_names, read_ids, transcript_strands, num_junc, juncs,\
-        junc_starts, junc_ends, processed, JAQs, high_conf, SIQ, best_prob =\
-             [],[],[],[],[],[],[],[],[],[],[],[]
-        for key, df in all_jwr.groupby(level=1):
-            ref_names.append(df.index.get_level_values(0)[0])
-            read_ids.append(df.index.get_level_values(1)[0])
-            JAQs.append(tuple(df.JAQ))
-            num_junc.append(len(df.JAQ))
-            high_conf.append(tuple(df.is_hcjwr))
-            transcript_strands.append(df.transcript_strand[0])
-            
-            identified = tuple(~df.corrected_junction.isnull())
-            processed.append(identified)
-            mapping = df.index.get_level_values('initial_junction') 
-            corrected = df.corrected_junction 
-            df_junc = \
-                [corrected[i] if identified[i] else mapping[i] for i in range(len(corrected))]
-            df_junc = sorted(df_junc)# I think this is a bug
-            juncs.append(tuple(df_junc))
-            junc_starts.append(tuple([x for x,y in df_junc]))
-            junc_ends.append(tuple([y for x,y in df_junc]))
-            SIQ.append(tuple(df.SIQ))
-            best_prob.append(tuple(df.best_prob))
-
-        all_read = pd.DataFrame({'reference_name':ref_names,  
-                                'read_id':read_ids,  
-                                'transcript_strand':transcript_strands, 
-                                'junc': juncs,
-                                'junc_count': num_junc,
-                                'junc_start':junc_starts, 
-                                'junc_end':junc_ends, 
-                                'corrected': processed, 
-                                'JAQ':JAQs,
-                                'high_conf':high_conf,
-                                'SIQ':SIQ,
-                                'best_prob': best_prob
-        })
-        return all_read
 
     # read the input file (prob_table, all_jwr.h5)
     logger.info(f'Parsing prob table file ...')

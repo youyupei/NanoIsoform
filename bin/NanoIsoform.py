@@ -136,7 +136,7 @@ def parse_arg():
 
 args = parse_arg()
 from __restructure_input import *
-#from __group_and_correct import *
+from __group_and_correct import *
 import jwr_correction
 
 
@@ -206,7 +206,64 @@ def main(args):
         '''))
 
 if __name__ == '__main__':
-    print(args)
+    # print(args)
     all_read, uncorrected_jwr = jwr_correction.main(args)
     all_read.to_hdf(args.output_fn, key='data')
+    uncorrected_jwr.to_hdf(args.output_fn, key='uncorrected_jwr')
+
+
+
+    # # read uncorrect jwr
+    # uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
+    # restructure it to read per row and group based on neaby junction
+    uncorrected_read = jwr_correction.restructure_per_jwr_dataframe(
+                                            uncorrected_jwr,
+                                            on='initial_junction',
+                                            output_uncorrected=False,
+                                            rm_cpl_missed_from_ends=False)
+    uncorrected_read.reset_index(drop=False, inplace = True)
+    uncorrected_read.to_hdf(args.output_fn, key='uncorrected_read')
+
+# temp input
+    #uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
+    #uncorrected_read = pd.read_hdf(args.output_fn, key='uncorrected_read')
+    
+    uncorrected_read['junc_count'] = uncorrected_read.junc.apply(len)
+    uncorrected_read = group_reads(uncorrected_read,max_diff = GROUP_ARG['max_diff'])
+
+    # correct JWR in each group
+    read_id_grp = uncorrected_read.groupby(by=['reference_name',
+                                            'non_overlap_group',
+                                            'junc_count','sub_group'])['read_id'].apply(list)
+    
+    corrected_d_list = []
+    uncorrected_d_list = []
+
+    for i in read_id_grp:
+        # correcting jwr_df per read group
+        jwr_to_correct = uncorrected_jwr[uncorrected_jwr.read_id.isin(i)]
+        corrected_jwr = jwr_correction.group_and_correct_uncorrected_jwr(args,
+                jwr_to_correct, max_diff=CORRECTION_ARG['dist'])
+        
+        # restructure back to read_df
+        corrected_d, uncorrected_d =\
+             jwr_correction.restructure_per_jwr_dataframe(
+                all_jwr=corrected_jwr,
+                on='corrected_junction',
+                output_uncorrected=True,
+                rm_cpl_missed_from_ends=True,
+                summary=False)
+                                        
+        corrected_d_list.append(corrected_d.drop(columns=['junc_count']))
+        uncorrected_d_list.append(uncorrected_d)
+
+
+    correct_r1 = pd.read_hdf(args.output_fn, key='data')
+    correct_r2 = pd.concat(corrected_d_list)
+    correct_r2.to_hdf(args.output_fn, key='data2')
+    pd.concat(uncorrected_d_list).to_hdf(args.output_fn, key='uncorrected_read_new')
+    pd.concat([correct_r1,correct_r2]).to_hdf(args.output_fn, key='corrected_read_new')
+    all_read.to_hdf(args.output_fn, key='data')
+    #group uncorrected jwr
+
     print('\n\nSummary:\n', helper.summary_msg)

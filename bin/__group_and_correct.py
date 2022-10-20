@@ -103,7 +103,8 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
         return out_d
 
     #################     
-    all_reads = all_reads.groupby(by='reference_name').apply(add_non_overlap_group)
+    all_reads = all_reads.groupby(by=['reference_name'
+                                    ]).apply(add_non_overlap_group)
     all_reads.reset_index(drop=True, inplace=True)
     all_reads.set_index(['reference_name',
                         'non_overlap_group',
@@ -112,6 +113,7 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
     
     df_list = []
     for k, d in all_reads.groupby(by=['reference_name',
+                                        'transcript_strand',
                                             'non_overlap_group',
                                             'junc_count']).__iter__():
         df_list.append(split_groupby(d, max_diff))

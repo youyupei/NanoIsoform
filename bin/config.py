@@ -15,7 +15,7 @@ HCJWR = {
     'JAQ_thres': 0.999, 
     'SIQ_thres': -0.4, 
     'prob_thres': 0.8,
-    'min_count':2,
+    'min_count':5,
     'consistence': True
     # minimap2 result should also agree with NanoSplicer, 
     # which is hard coded.
