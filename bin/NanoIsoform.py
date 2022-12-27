@@ -2,6 +2,7 @@
 
 # goal correct JWR without NanoSplicer output
 import argparse
+import pysam
 import importlib
 import warnings
 import textwrap
@@ -29,6 +30,9 @@ def parse_arg():
                         help='Filename of the probability table output from NanoSplicer')
     parser.add_argument('jwr_check_h5', type=str,
                         help='Filename of the HDF5 file output from NanoSplicer module'
+                        'jwr_checker')
+    parser.add_argument('input_BAM', type=str,
+                        help='Filename of the BAM file output from NanoSplicer module'
                         'jwr_checker')
 
     # Optional argument
@@ -139,7 +143,6 @@ from __restructure_input import *
 from __group_and_correct import *
 import jwr_correction
 
-
 # ACTION REQUIRED FOR THE FINAL VERSION
 #   remove levelname, filname, funcName, lineno for the final version
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
@@ -151,7 +154,6 @@ pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.max_colwidth', 50)
   
-
 # output 
 def output_h5_file_corrected_reads(d, filename, key='data', csv_output=OUTPUT_CSV):
     """Output h5 file containing the reads with all JWRs corrected. Those without
@@ -166,19 +168,42 @@ def output_h5_file_corrected_reads(d, filename, key='data', csv_output=OUTPUT_CS
     logger.info(helper.green_msg(f"Output saved as {args.output_fn}!"))
 
 
+def get_mapped_start_end(fn):
+    """finding the mapped start and end sites of each read. 
+    Args:
+        fn (str): BAM file name
+        out_fn (str): output filename (CSV)
+    """
+    bam = pysam.AlignmentFile(fn, "rb")
+    r_id = []
+    r_start = []
+    r_end = []
+
+    for read in bam.fetch():
+        # f_out.write(
+        #     f"{read.query_name},{read.reference_start},{read.reference_end}\n")
+        r_id.append(read.query_name)
+        r_start.append(read.reference_start)
+        r_end.append(read.reference_end)
+    return pd.DataFrame({'read_id':r_id,
+                         'trans_start':r_start,
+                         'trans_end': r_end})
+    
+
 def main(args):
     logger.info("Formatting input data...")
+    
     # get input data and reformat
+
+    # get jwr from nanosplicer output
     all_reads = parse_format_input_file(args)
     logger.info(helper.mem_time_msg())
     
-    # add some text summary
-    # add_summary(textwrap.dedent(
-    #     f'''
-    #     After correcting using NanoSplicer and JAQ >= {args.JAQ_thres}:
-    #         Total number of reads: {len(all_reads)}
-    #         Number of reads with all JWRs corrected: {np.sum(all_reads.corrected.apply(all))}
-    #     '''))
+    # get TSS TTS
+    logger.info("Getting TSS and TTS from BAM file")
+    tss_tts_d = get_mapped_start_end(args.input_BAM)
+    print(tss_tts_d)
+    exit()
 
     logger.info('Grouping reads...')
     all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
@@ -207,11 +232,11 @@ def main(args):
 
 if __name__ == '__main__':
     # print(args)
+
     all_read, uncorrected_jwr = jwr_correction.main(args)
+
     all_read.to_hdf(args.output_fn, key='data')
     uncorrected_jwr.to_hdf(args.output_fn, key='uncorrected_jwr')
-
-
 
     # # read uncorrect jwr
     # uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
@@ -224,13 +249,16 @@ if __name__ == '__main__':
     uncorrected_read.reset_index(drop=False, inplace = True)
     uncorrected_read.to_hdf(args.output_fn, key='uncorrected_read')
 
+
+
 # temp input
-    #uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
-    #uncorrected_read = pd.read_hdf(args.output_fn, key='uncorrected_read')
+    # uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
+    # uncorrected_read = pd.read_hdf(args.output_fn, key='uncorrected_read')
     
     uncorrected_read['junc_count'] = uncorrected_read.junc.apply(len)
     uncorrected_read = group_reads(uncorrected_read,max_diff = GROUP_ARG['max_diff'])
 
+    
     # correct JWR in each group
     read_id_grp = uncorrected_read.groupby(by=['reference_name',
                                             'non_overlap_group',
@@ -265,5 +293,15 @@ if __name__ == '__main__':
     pd.concat([correct_r1,correct_r2]).to_hdf(args.output_fn, key='corrected_read_new')
     all_read.to_hdf(args.output_fn, key='data')
     #group uncorrected jwr
+
+    # keys in output h5
+    # '/corrected_all_jwr', ALL JWR after HC junc correction (contain those with 0 or multiple HC junc)
+    # '/uncorrected_jwr',  uncorrected JWR 
+    # '/all_read', all reads restructure from all JWR (including all JWRs)
+    # '/data', corrected read which all JWRs have only 1 HCJWRs nearby
+    # '/uncorrected_read', uncorrected read which all JWRs have only 1 HCJWRs nearby
+    # '/data2', corrected read use in second run
+    # '/corrected_read_new', all corrected read using 1st and 2nd run
+    # '/uncorrected_read_new' all uncorrected read using 1st and 2nd run
 
     print('\n\nSummary:\n', helper.summary_msg)

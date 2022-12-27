@@ -12,9 +12,9 @@ DEFAULT_INPUT = {
 # HCJWR definition
 #####################################################
 HCJWR = {
-    'JAQ_thres': 0.999, 
+    'JAQ_thres': 0.95, 
     'SIQ_thres': -0.4, 
-    'prob_thres': 0.8,
+    'prob_thres': 0.95,
     'min_count':5,
     'consistence': True
     # minimap2 result should also agree with NanoSplicer, 

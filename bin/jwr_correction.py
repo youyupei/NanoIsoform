@@ -220,10 +220,8 @@ def single_group_correction(d_grp, args):
     d_grp_to_correct['corrected_junction'] = corrected_junctions
     d_grp_to_correct['hcjwr_candidates_probs'] =  hcjwr_candidate_probs
 
-        
     #return pd.concat([d_grp_to_correct,d_grp_corrected])
     return d_grp_to_correct
-
 
 def group_and_correct_uncorrected_jwr(args, d, max_diff):
     """
@@ -485,6 +483,7 @@ def main(args):
         pass
         # all_jwr.to_hdf('test_set_1008.h5', 'data')
         all_jwr = pd.read_hdf('test_set_1008.h5', 'data')
+    
     # proceed each chr
     all_jwr.reset_index(inplace = True)
     all_jwr_chr_grps = all_jwr.groupby(by=['reference_name', 'transcript_strand'])
@@ -508,7 +507,6 @@ def main(args):
     corrected_all_jwr.to_hdf(args.output_fn, 'corrected_all_jwr')
     all_read, uncorrected_jwr = restructure_per_jwr_dataframe(corrected_all_jwr)
     all_read.to_hdf(args.output_fn, 'all_read')
-
 
     # add_summary(textwrap.dedent(
     #     f'''
