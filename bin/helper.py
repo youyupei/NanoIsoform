@@ -9,7 +9,7 @@ import psutil
 import time
 import logging
 
-from config import *
+from arg_parser import *
 
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ logger.setLevel(logging.DEBUG)
 GLOBAL_START_TIME = time.time()
 
 summary_msg = ''
+
 def add_summary(msg):
     global summary_msg
     summary_msg += msg + '\n'
@@ -56,20 +57,26 @@ def reverse_complement(seq):
 		[comp[base] if base in comp.keys() else base for base in seq]
 	return ''.join(letters)[::-1]
 
-def err_msg(msg):
+def err_msg(msg, print_out=True):
 	CRED = '\033[91m'
 	CEND = '\033[0m'
-	print(CRED + msg + CEND)	
+	if print_out:
+		print(CRED + msg + CEND)
+	return CRED + msg + CEND
 
-def warning_msg(msg):
+def warning_msg(msg, print_out=True):
 	CRED = '\033[93m'
 	CEND = '\033[0m'
-	print(CRED + msg + CEND)
+	if print_out:
+		print(CRED + msg + CEND)
+	return CRED + msg + CEND
 
-def green_msg(msg):
-    CRED = '\033[92m'
-    CEND = '\033[0m'
-    print(CRED + msg + CEND)
+def green_msg(msg, print_out=True):
+	CRED = '\033[92m'
+	CEND = '\033[0m'
+	if print_out:
+		print(CRED + msg + CEND)
+	return CRED + msg + CEND
 
 def sliding_window_sum(array, window) :
     cum = np.cumsum(array)  
@@ -144,17 +151,3 @@ def check_exist(file_list):
     if exit_code == 1:
         sys.exit()
 
-def err_msg(msg):
-	CRED = '\033[91m'
-	CEND = '\033[0m'
-	return(CRED + msg + CEND)	
-
-def warning_msg(msg):
-	CRED = '\033[93m'
-	CEND = '\033[0m'
-	return(CRED + msg + CEND)
-
-def green_msg(msg):
-    CRED = '\033[92m'
-    CEND = '\033[0m'
-    return(CRED + msg + CEND)

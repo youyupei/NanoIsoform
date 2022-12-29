@@ -13,134 +13,11 @@ from tqdm import tqdm
 import numpy as np
 import logging
 
-from config import *
+# this will import variable args and update all global variable from config
+from arg_parser import *
 import helper
 from helper import add_summary
-
-def parse_arg():
-    parser = argparse.ArgumentParser(
-        description=textwrap.dedent(
-        '''
-        '''),
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    
-    # Required positional argument
-    parser.add_argument('prob_table', type=str,
-                        help='Filename of the probability table output from NanoSplicer')
-    parser.add_argument('jwr_check_h5', type=str,
-                        help='Filename of the HDF5 file output from NanoSplicer module'
-                        'jwr_checker')
-    parser.add_argument('input_BAM', type=str,
-                        help='Filename of the BAM file output from NanoSplicer module'
-                        'jwr_checker')
-
-    # Optional argument
-    parser.add_argument('--SIQ_thres', type=float, default=DEFAULT_INPUT['SIQ_thres'],
-                        help= textwrap.dedent(
-                            '''
-                            SIQ threshold for high qualilty squiggle matching （JWRs with）
-                            SIQ < threshold will be ignored from NanoSplicer output.
-                            '''))
-    parser.add_argument('--prob_thres', type=float, default=DEFAULT_INPUT['prob_thres'],
-                        help= textwrap.dedent(
-                            '''
-                            The minimum probability of the NanoSplicer identified junction.
-                            NanoSplicer identified junction with probability < threshold
-                            will be ignored
-                            '''))
-    parser.add_argument('--JAQ_thres', type=float, default=DEFAULT_INPUT['JAQ_thres'],
-                        help= textwrap.dedent(
-                            '''
-                            Fow JWRs that NanoSplicer does not give identification to. The initial mapped location 
-                            will be used as "corrected junction" if the Junction Alignment Quality (JAQ) 
-                            of the initial mapping >= this threshold. 
-                            '''))
-    
-    parser.add_argument('--nearby_jwr_correction_mode', type=str, choices=['majority_vote', 'probability'], default=CORRECTION_ARG['method'],
-                        help= textwrap.dedent(
-                            '''
-                            How to correct jwr based on nearby corrected jwrs.
-                            'majority_vote': Corrected to most supported junction nearby
-                            'probability': randomly choose from the nearby junctions with 
-                                            probability based on the proportion of support. 
-                            '''))
-
-    parser.add_argument('--uniform_prior', action='store_true',
-                        help='Use uniform prior probability for splice patterns. Recommended for synthetic RNA data (e.g. SIRV, Sequins)')
-    parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
-                        help='Output filename')
-    parser.add_argument('--cfg_fn', type=str, default='',
-                        help='Filename of customised config file.')
-                
-
-    # Developer only argument
-    hcjwr_arg = parser.add_argument_group(textwrap.dedent(
-        '''
-        Definition of High-confidence JWR:
-        Note that more stringent threshold than above should be specified. It will be overwritten when less stringet.
-        '''))
-    hcjwr_arg.add_argument('--hcjwr_SIQ_thres', type=float, default=HCJWR['SIQ_thres'],
-                        help= textwrap.dedent(
-                            '''
-                            SIQ threshold for high qualilty squiggle matching 
-                            '''))
-    hcjwr_arg.add_argument('--hcjwr_prob_thres', type=float, default=HCJWR['prob_thres'],
-                        help= textwrap.dedent(
-                            '''
-                            The minimum probability of the NanoSplicer identified junction.
-                            '''))
-    hcjwr_arg.add_argument('--hcjwr_JAQ_thres', type=float, default=HCJWR['JAQ_thres'],
-                        help= textwrap.dedent(
-                            '''
-                            Junction Alignment Quality (JAQ) of the initial mapping >= this threshold. 
-                            '''))
-    hcjwr_arg.add_argument('--hcjwr_consistence', type=bool, default=HCJWR['consistence'],
-                        help= textwrap.dedent(
-                            '''
-                            NanoSplicer junction is consistent with the minimap2 junction.
-                            '''))
-    hcjwr_arg.add_argument('--hcjwr_min_count', type=bool, default=HCJWR['min_count'],
-                        help= textwrap.dedent(
-                            '''
-                            Minimum support from HCJWRs for each unique HC junction.
-                            '''))
-
-
-    # Developer only argument
-    Dev_arg = parser.add_argument_group('For the developers only:')
-    Dev_arg.add_argument('--test_mode', action='store_true',
-                        help='Run in test mode.')
-    Dev_arg.add_argument('--no_nearby_jwr_correction', action = 'store_true',
-                        help= textwrap.dedent(
-                            '''For test purpose only: Turn off the correction based on nearby jwr.
-                            Note that reads with uncorrected jwr(s) will not appear in the 
-                            output.
-                            '''))
-
-
-    args = parser.parse_args()
-    # update config if provided
-    if args.cfg_fn:
-        #mdl = importlib.import_module(args.cfg_fn)
-        spec = importlib.util.spec_from_file_location(
-                os.path.basename(args.cfg_fn).split('.')[0], args.cfg_fn)
-        mdl = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mdl)
-        if "__all__" in mdl.__dict__:
-            names = mdl.__dict__["__all__"]
-        else:
-            names = [x for x in mdl.__dict__ if not x.startswith("_")]
-        globals().update({k: getattr(mdl, k) for k in names})
-        args = parser.parse_args()
-
-    # check file 
-    helper.check_exist([args.prob_table, args.jwr_check_h5])
-    return args
-
-args = parse_arg()
-
-# these package should be imported after the parse_arg to use user specified config file (not the best structure)
-from __restructure_input import *
+from __restructure_input import * # group reads
 from __group_and_correct import *
 import jwr_correction
 
@@ -149,7 +26,6 @@ import jwr_correction
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
 
 # set up pandas (temp for debuging)
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
@@ -191,9 +67,8 @@ def get_mapped_start_end(fn):
     return pd.DataFrame({'read_id':r_id,
                          'trans_start':r_start,
                          'trans_end': r_end})
-    
 
-def main(args):
+def main_old(args):
     logger.info("Formatting input data...")
     
     # get input data and reformat
@@ -233,43 +108,63 @@ def main(args):
             Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
         '''))
 
-if __name__ == '__main__':
-    # print(args)
+def main():
+    # get TSS TTS for each read
+    logger.info("Getting TSS and TTS from BAM file...")
+    tss_tts_d = get_mapped_start_end(args.input_BAM)
 
-    all_read, uncorrected_jwr = jwr_correction.main(args)
+    # get corrected jwrs (Round 1)
+    logger.info("Getting corrected jwrs (Round 1)...")
+    corrected_all_jwr = jwr_correction.correction_round1(args, tss_tts_d)
+    corrected_all_jwr.to_hdf(args.output_fn, 'corrected_all_jwr')
+    # get all reads after first round correction 
+    corrected_read_r1, uncorrected_jwr = \
+        jwr_correction.restructure_per_jwr_dataframe(
+                                            corrected_all_jwr, 
+                                            tss_tts_d,
+                                            output_uncorrected = True)
+    add_summary(f"Round 1: {len(corrected_read_r1)} reads successfully corrected")
+    add_summary(f"""Round 1: {len(uncorrected_jwr.read_id.unique())} reads 
+                    contains JWR with >1 HC junction nearby, remaining uncorrected""")
+    logger.info(
+        helper.green_msg(
+            f'Round 1 correction is finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}',
+            print_out=False))
+    
+    # add TSS TTS columns
+    if True: # save the data
+        corrected_read_r1.to_hdf(args.output_fn, key='corrected_read_r1')
+    if uncorrected_jwr is not None:
+        uncorrected_jwr.to_hdf(args.output_fn, key='uncorrected_jwr_r1')
+    else: 
+        return None
+    # stop if no furthur correction required
+    if args.skip_round2_correction:
+        return None
 
-    all_read.to_hdf(args.output_fn, key='data')
-    uncorrected_jwr.to_hdf(args.output_fn, key='uncorrected_jwr')
+    #####################################
+    # Round 2: recover uncorrected reads
+    #####################################
 
-    # # read uncorrect jwr
-    # uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
-    # restructure it to read per row and group based on neaby junction
-    uncorrected_read = jwr_correction.restructure_per_jwr_dataframe(
+    # get reads
+    uncorrected_read, _ = jwr_correction.restructure_per_jwr_dataframe(
                                             uncorrected_jwr,
+                                            tss_tts_d,
                                             on='initial_junction',
                                             output_uncorrected=False,
-                                            rm_cpl_missed_from_ends=False)
+                                            rm_cpl_missed_from_ends=True)
     uncorrected_read.reset_index(drop=False, inplace = True)
-    uncorrected_read.to_hdf(args.output_fn, key='uncorrected_read')
-
-
-
-# temp input
-    # uncorrected_jwr=pd.read_hdf(args.output_fn, key='uncorrected_jwr')
-    # uncorrected_read = pd.read_hdf(args.output_fn, key='uncorrected_read')
-    
+    uncorrected_read.to_hdf(args.output_fn, key='uncorrected_read_r1')
     uncorrected_read['junc_count'] = uncorrected_read.junc.apply(len)
     uncorrected_read = group_reads(uncorrected_read,max_diff = GROUP_ARG['max_diff'])
-
     
-    # correct JWR in each group
+    # group together the reads with same number of junc
     read_id_grp = uncorrected_read.groupby(by=['reference_name',
                                             'non_overlap_group',
                                             'junc_count','sub_group'])['read_id'].apply(list)
-    
+    # correct JWR in each group
     corrected_d_list = []
     uncorrected_d_list = []
-
     for i in read_id_grp:
         # correcting jwr_df per read group
         jwr_to_correct = uncorrected_jwr[uncorrected_jwr.read_id.isin(i)]
@@ -279,32 +174,42 @@ if __name__ == '__main__':
         # restructure back to read_df
         corrected_d, uncorrected_d =\
              jwr_correction.restructure_per_jwr_dataframe(
-                all_jwr=corrected_jwr,
-                on='corrected_junction',
-                output_uncorrected=True,
-                rm_cpl_missed_from_ends=True,
-                summary=False)
-                                        
+                                                corrected_jwr,
+                                                tss_tts_d,
+                                                on='corrected_junction',
+                                                output_uncorrected=True,
+                                                rm_cpl_missed_from_ends=True,
+                                                summary=False)
         corrected_d_list.append(corrected_d.drop(columns=['junc_count']))
         uncorrected_d_list.append(uncorrected_d)
+    corrected_read_r2 = pd.concat(corrected_d_list)
+    corrected_read_r2.to_hdf(args.output_fn, key='corrected_read_r2')
+    uncorrected_jwr_r2 = pd.concat(uncorrected_d_list)
+    uncorrected_jwr_r2.to_hdf(args.output_fn, key='uncorrected_jwr_r2')
 
-
-    correct_r1 = pd.read_hdf(args.output_fn, key='data')
-    correct_r2 = pd.concat(corrected_d_list)
-    correct_r2.to_hdf(args.output_fn, key='data2')
-    pd.concat(uncorrected_d_list).to_hdf(args.output_fn, key='uncorrected_read_new')
-    pd.concat([correct_r1,correct_r2]).to_hdf(args.output_fn, key='corrected_read_new')
-    all_read.to_hdf(args.output_fn, key='data')
-    #group uncorrected jwr
+    pd.concat([corrected_read_r1,corrected_read_r2]).to_hdf(args.output_fn, key='corrected_read_all')
+    
+    add_summary(f"After Round 2: {len(corrected_read_r2) + len(corrected_read_r1)} "
+                "reads successfully corrected")
+    add_summary(f"After Round 2: {len(uncorrected_jwr_r2.read_id.unique())} "
+                "reads contains JWR with >1 HC junction nearby, remaining uncorrected")
 
     # keys in output h5
     # '/corrected_all_jwr', ALL JWR after HC junc correction (contain those with 0 or multiple HC junc)
     # '/uncorrected_jwr',  uncorrected JWR 
-    # '/all_read', all reads restructure from all JWR (including all JWRs)
+    # '/corrected_read_r1', reads with all JWR corrected, restructured from all JWR
     # '/data', corrected read which all JWRs have only 1 HCJWRs nearby
     # '/uncorrected_read', uncorrected read which all JWRs have only 1 HCJWRs nearby
     # '/data2', corrected read use in second run
     # '/corrected_read_new', all corrected read using 1st and 2nd run
     # '/uncorrected_read_new' all uncorrected read using 1st and 2nd run
+    if helper.summary_msg:
+        print('\n\nSummary:\n', helper.summary_msg)
 
-    print('\n\nSummary:\n', helper.summary_msg)
+
+if __name__ == '__main__':
+    if args.test_mode:
+        test()
+    else:
+        main()
+

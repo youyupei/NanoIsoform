@@ -11,9 +11,7 @@ import logging
 
 import helper
 from helper import add_summary
-# inport configs
-# this is for import the the global variable from NanoIsoform.py
-from NanoIsoform import *
+from arg_parser import *
 
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)

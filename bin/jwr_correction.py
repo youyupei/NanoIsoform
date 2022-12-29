@@ -23,7 +23,7 @@ import itertools
 import helper
 from helper import add_summary
 # import configs
-from NanoIsoform import *
+from arg_parser import *
 
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
@@ -155,7 +155,7 @@ def hcjwr_identification(d, args):
     hcjwr_count_df = hcjwr_count_df[hcjwr_count_df.counts > args.hcjwr_min_count]
     return hcjwr_count_df, thres_pass
 
-def single_group_correction(d_grp, args):
+def single_jwr_group_correction(d_grp, args):
     """Function for correcting JWRs in a single junction group containing 
     nearby junctions.
 
@@ -163,70 +163,64 @@ def single_group_correction(d_grp, args):
     Step 2. Correct non-hc JWR
 
     Args:
-        args (_type_): _description_
-        d (_type_): _description_
+        d_grp 
     Returns:
         prob table from NanoSplicer with updated columns:
             corrected (bool)
             HC_candidates (tuples)
             HC_prob (tuples)
     """
+    # identify hc junction and index of which JWR are hc
     hc_junc, is_hcjwr = hcjwr_identification(d_grp, args)
 
+    # when not hc junction find, mark junction as (-1, -1)
     if not len(hc_junc):
         d_grp['corrected_junction'] = [(-1,-1)] * len(d_grp)
         d_grp['HC_candidates'] = [()] * len(d_grp)
         d_grp['HC_prob'] = [()] * len(d_grp)
         # need to save the result
         return d_grp
-    
+    else:
+        pass
+
     d_grp_to_correct = d_grp.copy()
     d_grp_to_correct.reset_index(inplace=True)
 
-    # get overlap between NanoSplicer candidate and HC junction
+    # get HC candidates for each JWR (overlap between NanoSplicer candidate and HC junction)
     uniq_candidates = d_grp_to_correct['candidates'].drop_duplicates().dropna()
     hc_junc_set = set(hc_junc.initial_junction)
     candidate_map_dict = {k:tuple(set(k) & hc_junc_set) for k in uniq_candidates}
     candidate_map_dict[np.nan]=()
     d_grp_to_correct['HC_candidates'] = d_grp_to_correct.candidates.map(candidate_map_dict)
     
+    # perform corretion
+        # no. of HC junction nearby == 0: mark jwr as (-1, -1)
+        # == 1: correct to it
+        # > 1: do not correct, mark jwr as np.nan adding the probability of each HC junc for each JWR
     corrected_junctions = []
     hcjwr_candidate_probs = []
     for row in d_grp_to_correct.itertuples():   
-
-        # perform corretion
         if pd.isna(row.HC_candidates) or len(row.HC_candidates) == 0:
             # completely missed jwr
             corrected_junctions.append((-1,-1))
             hcjwr_candidate_probs.append(())
-
         elif len(row.HC_candidates) == 1:
             corrected_junctions.append(row.HC_candidates[0])
             hcjwr_candidate_probs.append(())
-
         else:
-
             candidate = list(row.candidates)
             hcjwr_candidate_probs.append(
                 tuple([row.prob[candidate.index(x)] for x in row.HC_candidates]))
-            # if row.NanoSplicer_junction in row.HC_candidates:
-            #     corrected_junctions.append(row.NanoSplicer_junction) 
-            # elif row.initial_junction in row.HC_candidates:
-            # # and row.JAQ > args.JAQ_thres:
-            #     corrected_junctions.append(row.initial_junction) 
-            # else:
-            #     corrected_junctions.append(np.nan) 
             corrected_junctions.append(np.nan)
     d_grp_to_correct['corrected_junction'] = corrected_junctions
     d_grp_to_correct['hcjwr_candidates_probs'] =  hcjwr_candidate_probs
 
-    #return pd.concat([d_grp_to_correct,d_grp_corrected])
     return d_grp_to_correct
 
 def group_and_correct_uncorrected_jwr(args, d, max_diff):
     """
-    1. group JWRs
-    2.For each group: 
+    1. group JWRs 
+    2. For each group: 
         1. get HCJWR
         2. correct in group
 
@@ -255,19 +249,19 @@ def group_and_correct_uncorrected_jwr(args, d, max_diff):
     d['group_idx'] = group_idx
     tqdm.pandas(desc="Processing nearby JWR groups", position=10, leave = False)
     d_correct = d.groupby('group_idx').progress_apply(
-        lambda x: single_group_correction_v2(x, args))
+        lambda x: single_jwr_group_correction_v2(x, args))
     return d_correct
 
-def single_group_correction_v2(d_grp, args):
-    """Function for correcting JWRs in a single junction group containing 
-    nearby junctions.
-
-    Step 1. Get hc junction list and count
-    Step 2. Correct non-hc JWR
+def single_jwr_group_correction_v2(d_grp, args):
+    """Function for correcting JWRs in a single junction group containing nearby junctions.
 
     Args:
-        args (_type_): _description_
-        d (_type_): _description_
+        d_grp (pd.DataFrame)
+        args
+
+    Step 1. Get hc junction list and count
+    Step 2. Correct non-hc JWR (keep JWR uncorrected when there are multiple hc junction)
+
     Returns:
         prob table from NanoSplicer with updated columns:
             corrected (bool)
@@ -339,15 +333,14 @@ def single_group_correction_v2(d_grp, args):
     #return pd.concat([d_grp_to_correct,d_grp_corrected])
     return d_grp_to_correct
 
-
 def group_and_correct(args, d, max_diff):
     """
-    1. group JWRs
-    2.For each group: 
+    1. group JWRs based on max_diff
+    2. For each group: 
         1. get HCJWR
         2. correct in group
 
-    Note, all junction are assumed to be on a same chromosome in this function
+    Note, all JWR in input dataframe (d) are assumed to be on a same chromosome in this function
 
     Args:
         d (pd.DataFrame): prob table from NanoSplicer
@@ -358,23 +351,26 @@ def group_and_correct(args, d, max_diff):
             HC_candidates (tuples)
             HC_prob (tuples)
     """
+    # check assumption
     try:
         assert len(d.reference_name.unique()) == 1
     except AssertionError as msg:
         print(msg)
         sys.exit(1)
 
+    # Assign group id in the order of input JWRs. Nearby JWRs will have same group id.
     group_idx = get_groups(d.initial_junction, max_diff)
-
-    # get group of jwrs in
     d['group_idx'] = group_idx
+
+    # correct each single group
     tqdm.pandas(desc="Processing nearby JWR groups")
     d_correct = d.groupby('group_idx').progress_apply(
-        lambda x: single_group_correction(x, args))
+        lambda x: single_jwr_group_correction(x, args))
+    
     return d_correct
 
 
-def restructure_per_jwr_dataframe(all_jwr, 
+def restructure_per_jwr_dataframe(all_jwr, tss_tts_d, 
                                   on='corrected_junction',
                                   output_uncorrected = True,
                                   rm_cpl_missed_from_ends = True,
@@ -383,6 +379,7 @@ def restructure_per_jwr_dataframe(all_jwr,
 
     Args:
         all_jwr (df): DataFrame with JWR per row
+        tss_tts_d (df): DataFrame containing transcript start and end site for each read
         on (str, optional): Which junction to use. Defaults to 'corrected_junction'.
         output_uncorrected (bool, optional): 
             Whether output a DataFrame with JWRs from uncorrected reads. Defaults to True.
@@ -401,12 +398,13 @@ def restructure_per_jwr_dataframe(all_jwr,
             'junc_count' number of junctions
             'junc_start': 5' splice site of each junction
             'junc_end': 3' splice site of each junction
+        Note: if on='corrected_junction', this will only include reads with all JWR corrected.
         Output 2 (if `output_uncorrected=True`): 
-            DataFrame containing more infomation of reads with uncorrected JWRs
+            DataFrame containing more infomation of reads with uncorrected JWRs (This is a JWR table)
     """
     ref_names, read_ids, transcript_strands, num_junc, juncs,\
-    junc_starts, junc_ends =\
-            [],[],[],[],[],[],[]
+    junc_starts, junc_ends, intron_removed_ends, intron_removed_starts =\
+            [],[],[],[],[],[],[],[],[]
     
     uncorrected_read = []
     uncorrected_read_count = 0
@@ -425,29 +423,53 @@ def restructure_per_jwr_dataframe(all_jwr,
             uncorrected_read_count += 1
             continue
 
-        # remove completely missed junction at begining or end
-        is_hc_junc = df.corrected_junction != (-1,-1)
-        if rm_cpl_missed_from_ends:
-            # remove completely missed junction in the middle
-            if sum([k for k, g in itertools.groupby(is_hc_junc)])!=1:
-                discard_read_count += 1
-                continue
+        is_hc_junc = df['corrected_junction'] != (-1,-1)
+        
+        # remove completely missed junction in the middle
+        if sum([k for k, g in itertools.groupby(is_hc_junc)])!=1:
+            discard_read_count += 1
+            continue
+
         
         ref_names.append(list(df.reference_name)[0])
         read_ids.append(df.read_id[0])
         transcript_strands.append(df.transcript_strand[0])
-        rst_junc = tuple(df[on][is_hc_junc])
+        
+        intron_removed_start = 0
+        intron_removed_end = 0
+        if rm_cpl_missed_from_ends:
+            # remove completely missed junction at begining or end
+            rst_junc = tuple(df[on][is_hc_junc])
+            for junc, i in zip(df[on], is_hc_junc):
+                if i == 1:
+                    break
+                intron_removed_start += np.abs(junc[1]-junc[0])
+
+            for junc, i in zip(df[on][::-1], is_hc_junc[::-1]):
+                if i:
+                    break
+                intron_removed_end += np.abs(junc[1]-junc[0])
+            
+        else:
+            rst_junc = tuple(df[on])
+            
+        
         juncs.append(tuple(rst_junc))
         junc_starts.append(tuple([x for x,y in rst_junc]))
         junc_ends.append(tuple([y for x,y in rst_junc]))
-
+        intron_removed_ends.append(intron_removed_end)
+        intron_removed_starts.append(intron_removed_start)
     all_read = pd.DataFrame({'reference_name':ref_names,  
                             'read_id':read_ids,  
                             'transcript_strand':transcript_strands, 
                             'junc': juncs,
                             'junc_start':junc_starts, 
-                            'junc_end':junc_ends
+                            'junc_end':junc_ends,
+                            'intron_removed_start': intron_removed_starts,
+                            'intron_removed_end':intron_removed_ends
     })
+
+    all_read = all_read.merge(tss_tts_d, on = 'read_id')
     all_read['junc_count'] = all_read.junc.apply(len)
 
     
@@ -456,57 +478,51 @@ def restructure_per_jwr_dataframe(all_jwr,
         uncorrected_read = pd.concat(uncorrected_read) if len(uncorrected_read) else None
         return all_read, uncorrected_read
     else:
-        return all_read
+        return all_read, None
 
 # main function
-def main(args):
+def correction_round1(args, tss_tts_d):
     # read input NanoSplicer result
-    if True:
-        logger.info(f'Parsing prob table file ...')
-        prob_table = parse_nanosplicer_prob_table(args)
-
-        logger.info(f'Parsing jwr file ...')
-        all_jwr = parse_nanosplicer_jwr_h5(args)
-        # correct JWRs in all_jwrs using NanoSplicer output
-        logger.info(f'Correcting JWRs using NanoSplicer output ...')
-
-        all_jwr = all_jwr.merge(
-            prob_table, 
-            how='left', 
-            #right_on = ['SIQ', 'best_prob'],
-            left_index=True,
-            right_index=True)
-        logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
+    logger.info(f'Parsing jwr checker file ...')
+    all_jwr = parse_nanosplicer_jwr_h5(args)
+    logger.info(f'Parsing prob table file ...')
+    prob_table = parse_nanosplicer_prob_table(args)
     
-    # for testing
-    if False:
-        pass
-        # all_jwr.to_hdf('test_set_1008.h5', 'data')
-        all_jwr = pd.read_hdf('test_set_1008.h5', 'data')
-    
-    # proceed each chr
+    # correct JWRs in all_jwrs using NanoSplicer output
+    logger.info(f'Preparing data frame for correction...')
+    all_jwr = all_jwr.merge(prob_table, 
+                            how='left', 
+                            #right_on = ['SIQ', 'best_prob'],
+                            left_index=True,
+                            right_index=True)
+    logger.info(
+        helper.green_msg(
+            f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}',
+            print_out=False))
+
+    # proceed each chromosome strand
+    logger.info(f'Correcting JWRs based on High-confidence JWRs ... (Round 1)')
     all_jwr.reset_index(inplace = True)
     all_jwr_chr_grps = all_jwr.groupby(by=['reference_name', 'transcript_strand'])
-    
-    #group_and_correct(args, all_jwr, max_diff=CORRECTION_ARG['dist'])
-
     corrected_all_jwr = []
-
-    logger.info(f'Correcting JWRs based on High-confidence JWRs ...')
-    for _, all_jwr_single_chr in tqdm(all_jwr_chr_grps.__iter__(), 
+    for key, all_jwr_single_chr in tqdm(all_jwr_chr_grps.__iter__(), 
                             total = len(all_jwr_chr_grps.groups.keys()),
                             desc='Chromosome (strand-aware)', position=0, leave = False):
+        # ignore result without strand information
+        if key[1] not in ['+', '-']:
+            continue
         corrected_all_jwr.append(
-            group_and_correct(args,
-                all_jwr_single_chr, max_diff=CORRECTION_ARG['dist']))
+            group_and_correct(args, all_jwr_single_chr, 
+                              max_diff=CORRECTION_ARG['dist']))
 
-    logger.info(f'Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
-    logger.info(f'Concating JWR table...')
+    logger.info(f'Finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}')
     
+    logger.info(f'Converting JWR table to read table...')
     corrected_all_jwr = pd.concat(corrected_all_jwr)
-    corrected_all_jwr.to_hdf(args.output_fn, 'corrected_all_jwr')
-    all_read, uncorrected_jwr = restructure_per_jwr_dataframe(corrected_all_jwr)
-    all_read.to_hdf(args.output_fn, 'all_read')
+    
+    return corrected_all_jwr
+    #all_read, uncorrected_jwr = restructure_per_jwr_dataframe(corrected_all_jwr, tss_tts_d)
+    # return all_read, uncorrected_jwr
 
     # add_summary(textwrap.dedent(
     #     f'''
@@ -515,4 +531,4 @@ def main(args):
     #         Number of reads containing uncorrected JWRs: {uncorrected_read_count}
     #         Number of reads discarded: {discard_read_count}
     #     '''))
-    return all_read, uncorrected_jwr
+    
