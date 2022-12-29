@@ -140,7 +140,7 @@ def check_exist(file_list):
     for fn in file_list:
         if not os.path.exists(fn):
             exit_code = 1
-            err_msg(f"Error: can not find file '{fn}'")
+            print(err_msg(f"Error: can not find file '{fn}'"))
     if exit_code == 1:
         sys.exit()
 

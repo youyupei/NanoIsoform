@@ -11,12 +11,12 @@ import logging
 import helper
 from helper import add_summary
 # inport configs
-from NanoIsoform import *
+# this is for import the the global variable from NanoIsoform.py
+from NanoIsoform import * 
 
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
 
 def restructure_per_jwr_dataframe(all_jwr):
     """Restructured table:

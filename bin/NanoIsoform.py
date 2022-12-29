@@ -1,6 +1,5 @@
 #!/usr/bin/env python3 
 
-# goal correct JWR without NanoSplicer output
 import argparse
 import pysam
 import importlib
@@ -139,6 +138,8 @@ def parse_arg():
     return args
 
 args = parse_arg()
+
+# these package should be imported after the parse_arg to use user specified config file (not the best structure)
 from __restructure_input import *
 from __group_and_correct import *
 import jwr_correction
@@ -148,7 +149,9 @@ import jwr_correction
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-# set up pandas
+
+
+# set up pandas (temp for debuging)
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)

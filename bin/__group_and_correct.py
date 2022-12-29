@@ -12,6 +12,7 @@ import logging
 import helper
 from helper import add_summary
 # inport configs
+# this is for import the the global variable from NanoIsoform.py
 from NanoIsoform import *
 
 logging.basicConfig(format=LOG_FORMAT, datefmt=DATE_FORMATE)
@@ -29,7 +30,6 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
         add "subgroup" columns to the dataframe, each subgroup of reads share 
         exactly same junctions
     """
-
     def split_groupby(df, max_diff):
         org_d = df.copy()
 
@@ -64,7 +64,6 @@ def group_reads(all_reads, max_diff = GROUP_ARG['max_diff']):
             # padding
             array_pad = np.hstack([array[0], array])
             return np.cumsum(np.abs(array_pad[1:] - array_pad[:-1]) > max_diff)
-  
   
     def add_non_overlap_group(df):
         """Output a copy of the df with a new columns "non_overlap_group"
