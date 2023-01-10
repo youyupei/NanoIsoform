@@ -1,4 +1,4 @@
-name: NanoSplicer
+name: NanoIsoform
 channels:
   - bioconda
   - default
@@ -18,3 +18,4 @@ dependencies:
   - pip:
     - ont_fast5_api
     - tables
+    - swifter==1.3.4
