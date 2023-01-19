@@ -440,12 +440,12 @@ def restructure_per_jwr_dataframe(all_jwr, tss_tts_d,
         if rm_cpl_missed_from_ends:
             # remove completely missed junction at begining or end
             rst_junc = tuple(df[on][is_hc_junc])
-            for junc, i in zip(df[on], is_hc_junc):
+            for junc, i in zip(df['initial_junction'], is_hc_junc):
                 if i == 1:
                     break
                 intron_removed_start += np.abs(junc[1]-junc[0])
 
-            for junc, i in zip(df[on][::-1], is_hc_junc[::-1]):
+            for junc, i in zip(df['initial_junction'][::-1], is_hc_junc[::-1]):
                 if i:
                     break
                 intron_removed_end += np.abs(junc[1]-junc[0])
