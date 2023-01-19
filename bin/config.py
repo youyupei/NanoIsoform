@@ -14,7 +14,7 @@ DEFAULT_INPUT = {
 HCJWR = {
     'JAQ_thres': 0.95, 
     'SIQ_thres': -0.4, 
-    'prob_thres': 0.98,
+    'prob_thres': 0.95,
     'min_count':5,
     'consistence': True
     # minimap2 result should also agree with NanoSplicer, 
