@@ -92,7 +92,7 @@ def parse_arg():
                             '''
                             NanoSplicer junction is consistent with the minimap2 junction.
                             '''))
-    hcjwr_arg.add_argument('--hcjwr_min_count', type=bool, default=HCJWR['min_count'],
+    hcjwr_arg.add_argument('--hcjwr_min_count', type=int, default=HCJWR['min_count'],
                         help= textwrap.dedent(
                             '''
                             Minimum support from HCJWRs for each unique HC junction.
