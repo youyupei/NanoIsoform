@@ -480,7 +480,7 @@ def restructure_per_jwr_dataframe(all_jwr, tss_tts_d,
     else:
         return all_read, None
 
-# main function
+# main function for correction
 def correction_round1(args, tss_tts_d):
     # read input NanoSplicer result
     logger.info(f'Parsing jwr checker file ...')

@@ -46,7 +46,6 @@ def output_h5_file_corrected_reads(d, filename, key='data', csv_output=OUTPUT_CS
         output_d.to_csv(filename+'.csv')
     logger.info(helper.green_msg(f"Output saved as {args.output_fn}!"))
 
-
 def get_mapped_start_end(fn):
     """finding the mapped start and end sites of each read. 
     Args:
@@ -68,51 +67,22 @@ def get_mapped_start_end(fn):
                          'trans_start':r_start,
                          'trans_end': r_end})
 
-def main_old(args):
-    logger.info("Formatting input data...")
-    
-    # get input data and reformat
+# main read correction pipeline
+def nanoisoform_correction_pipeline(save_hd=True):
+    '''
+    Run the NanoIsoform read correction step.
+    Argument: 
+        save_hd <bool>: whether or not save dataframe in the intermediate steps
 
-    # get jwr from nanosplicer output
-    all_reads = parse_format_input_file(args)
-    logger.info(helper.mem_time_msg())
-    
-    # get TSS TTS
-    logger.info("Getting TSS and TTS from BAM file")
-    tss_tts_d = get_mapped_start_end(args.input_BAM)
-    print(tss_tts_d)
-    exit()
+    Output:
+        1. pd.DataFrame: reads with all JWRs corrected. 
+        2. pd.DataFrame: reads with Uncorrected JWRs
+    '''
 
-    logger.info('Grouping reads...')
-    all_reads = group_reads(all_reads,max_diff = GROUP_ARG['max_diff'])
-    all_reads.reset_index(drop=False, inplace = True)
-    logger.info(helper.mem_time_msg())
-    if args.no_nearby_jwr_correction:
-        all_reads[all_reads.corrected.apply(all)].to_hdf(args.output_fn, key='data')
-        all_reads[all_reads.corrected.apply(all)].to_csv(args.output_fn+'.csv')
-        return None
-    else:
-        pass
-
-    logger.info('Correcting reads in each group...')
-    # correct junction within large groups
-    corrected_d = correct_junction_per_group(
-                    all_reads, methods=args.nearby_jwr_correction_mode)
-    logger.info('Recovering remaining reads using cross-group information...')
-    logger.info(helper.mem_time_msg())
-    output_h5_file_corrected_reads(corrected_d, args.output_fn, key='data')
-    # add some text summary
-    add_summary(textwrap.dedent(
-        f'''
-        After correcting based on nearby JWRs:
-            Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
-        '''))
-
-# main pipeline
-def main():
-    # get TSS TTS for each read
+    # get TSS TTS for each read (because this information is missing in NanoSplicer output)
     logger.info("Getting TSS and TTS from BAM file...")
     tss_tts_d = get_mapped_start_end(args.input_BAM)
+
 
     #####################################
     # Round 1 correction: 
@@ -138,6 +108,7 @@ def main():
                                             corrected_all_jwr, 
                                             tss_tts_d,
                                             output_uncorrected = True)
+    
     add_summary(f"Round 1: {len(corrected_read_r1)} reads successfully corrected")
     add_summary(f"""Round 1: {len(uncorrected_jwr.read_id.unique())} reads 
                     contains JWR with >1 HC junction nearby, remaining uncorrected""")
@@ -196,20 +167,24 @@ def main():
                                                 summary=False)
         corrected_d_list.append(corrected_d.drop(columns=['junc_count']))
         uncorrected_d_list.append(uncorrected_d)
+    
+    ## combine all the groups
     corrected_read_r2 = pd.concat(corrected_d_list)
     corrected_read_r2.to_hdf(args.output_fn, key='corrected_read_r2')
     uncorrected_jwr_r2 = pd.concat(uncorrected_d_list)
     uncorrected_jwr_r2.to_hdf(args.output_fn, key='uncorrected_jwr_r2')
-
-    pd.concat([corrected_read_r1,corrected_read_r2]).to_hdf(args.output_fn, key='corrected_read_all')
     
     add_summary(f"After Round 2: {len(corrected_read_r2) + len(corrected_read_r1)} "
                 "reads successfully corrected")
     add_summary(f"After Round 2: {len(uncorrected_jwr_r2.read_id.unique())} "
                 "reads contains JWR with >1 HC junction nearby, remaining uncorrected")
     
+    
     if helper.summary_msg:
         print('\n\nSummary:\n', helper.summary_msg)
+    
+    corrected_read_all = pd.concat([corrected_read_r1,corrected_read_r2])
+    corrected_read_all.to_hdf(args.output_fn, key='corrected_read_all')
     # Up until here, I have generated a h5 file containing multiple pd.DataFrame:
         # keys in output h5
         # '/corrected_all_jwr', ALL JWR after HC junc correction (contain those with 0 or multiple HC junc)
@@ -223,8 +198,5 @@ def main():
 
 
 if __name__ == '__main__':
-    if args.test_mode:
-        test()
-    else:
-        main()
+        nanoisoform_correction_pipeline(save_hd = args.save_hdf)
 

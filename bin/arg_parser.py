@@ -101,8 +101,10 @@ def parse_arg():
 
     # Developer only argument
     Dev_arg = parser.add_argument_group('For the developers only:')
-    Dev_arg.add_argument('--test_mode', action='store_true',
-                        help='Run in test mode.')
+    # Dev_arg.add_argument('--test_mode', action='store_true',
+    #                     help='Run in test mode.')
+    Dev_arg.add_argument('--save_hdf', action='store_true',
+                        help='Save intermediate dataframe into hdf5 file for debugging.')
     Dev_arg.add_argument('--no_nearby_jwr_correction', action = 'store_true',
                         help= textwrap.dedent(
                             '''For test purpose only: Turn off the correction based on nearby jwr.
