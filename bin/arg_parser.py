@@ -24,8 +24,8 @@ def parse_arg():
                         help='Filename of the HDF5 file output from NanoSplicer module'
                         'jwr_checker')
     parser.add_argument('input_BAM', type=str,
-                        help='Filename of the BAM file output from NanoSplicer module'
-                        'jwr_checker')
+                        help='Filename of the input BAM (same as what has been input to NanoSplicer module jwr_checker)'
+                       )
 
     # Optional argument
     parser.add_argument('--SIQ_thres', type=float, default=DEFAULT_INPUT['SIQ_thres'],

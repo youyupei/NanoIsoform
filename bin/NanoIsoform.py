@@ -108,15 +108,30 @@ def main_old(args):
             Number of reads with all JWRs corrected: {np.sum(corrected_d.all_corrected)}/{len(corrected_d)}
         '''))
 
+# main pipeline
 def main():
     # get TSS TTS for each read
     logger.info("Getting TSS and TTS from BAM file...")
     tss_tts_d = get_mapped_start_end(args.input_BAM)
 
-    # get corrected jwrs (Round 1)
+    #####################################
+    # Round 1 correction: 
+    '''
+    Correcting JWRs based on High-confidence JWRs (HC-JWRs)
+    1. group read based on mapped splice junctions (reads in a some group must have same number
+            of splice junction and they sought to be similar)
+    2. For each read group. If sufficient HC-JWRs found in each junction region 
+            of a read group and they support comes support a single HC-junction, 
+            correct all JWRs in the region to the HC-juncion.
+    3. Otherwise, leave those JWRs to round 2 correction. 
+    '''
+
+    #####################################
+    # get corrected jwrs
     logger.info("Getting corrected jwrs (Round 1)...")
     corrected_all_jwr = jwr_correction.correction_round1(args, tss_tts_d)
     corrected_all_jwr.to_hdf(args.output_fn, 'corrected_all_jwr')
+    
     # get all reads after first round correction 
     corrected_read_r1, uncorrected_jwr = \
         jwr_correction.restructure_per_jwr_dataframe(
@@ -131,19 +146,18 @@ def main():
             f'Round 1 correction is finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}',
             print_out=False))
     
-    # add TSS TTS columns
+    ## add TSS TTS columns
     if True: # save the data
         corrected_read_r1.to_hdf(args.output_fn, key='corrected_read_r1')
     if uncorrected_jwr is not None:
         uncorrected_jwr.to_hdf(args.output_fn, key='uncorrected_jwr_r1')
     else: 
         return None
-    # stop if no furthur correction required
-    if args.skip_round2_correction:
+    if args.skip_round2_correction: ## stop if no furthur correction required
         return None
 
     #####################################
-    # Round 2: recover uncorrected reads
+    # Round correction 2: recover uncorrected reads
     #####################################
 
     # get reads
@@ -193,18 +207,19 @@ def main():
                 "reads successfully corrected")
     add_summary(f"After Round 2: {len(uncorrected_jwr_r2.read_id.unique())} "
                 "reads contains JWR with >1 HC junction nearby, remaining uncorrected")
-
-    # keys in output h5
-    # '/corrected_all_jwr', ALL JWR after HC junc correction (contain those with 0 or multiple HC junc)
-    # '/uncorrected_jwr',  uncorrected JWR 
-    # '/corrected_read_r1', reads with all JWR corrected, restructured from all JWR
-    # '/data', corrected read which all JWRs have only 1 HCJWRs nearby
-    # '/uncorrected_read', uncorrected read which all JWRs have only 1 HCJWRs nearby
-    # '/data2', corrected read use in second run
-    # '/corrected_read_new', all corrected read using 1st and 2nd run
-    # '/uncorrected_read_new' all uncorrected read using 1st and 2nd run
+    
     if helper.summary_msg:
         print('\n\nSummary:\n', helper.summary_msg)
+    # Up until here, I have generated a h5 file containing multiple pd.DataFrame:
+        # keys in output h5
+        # '/corrected_all_jwr', ALL JWR after HC junc correction (contain those with 0 or multiple HC junc)
+        # '/uncorrected_jwr',  uncorrected JWR 
+        # '/corrected_read_r1', reads with all JWR corrected, restructured from all JWR
+        # '/data', corrected read which all JWRs have only 1 HCJWRs nearby
+        # '/uncorrected_read', uncorrected read which all JWRs have only 1 HCJWRs nearby
+        # '/data2', corrected read use in second run
+        # '/corrected_read_new', all corrected read using 1st and 2nd run
+        # '/uncorrected_read_new' all uncorrected read using 1st and 2nd run
 
 
 if __name__ == '__main__':
