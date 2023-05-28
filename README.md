@@ -18,11 +18,17 @@ conda env create -f conda_env/environment.yml
 
 # Running NanoIsoform
 
+## Input file: 
+* Probability table from NanoSplicer (TSV)
+* NanoSplicer `jwr_checker` output (HDF5)
+* BAM file (same as what has been input to NanoSplicer)
+
 ```
-python3 bin/NanoIsoform.py  <probability table from NanoSplicer>  <HDF5 output from NanoSplicer (from jwr_checker.py)> <input BAM file (same as what has been input to NanoSplicer)>
->
-   
+python3 bin/NanoIsoform.py  < TSV from NanoSplicer>  <HDF5 NanoSplicer> <BAM file>
 ```
+
+## Output:
+BED file. Each entry is a unique isoform and the "score" field (columns 5) represents the read counts for each identified isoforms. 
 
 **For more details:**
 ```
@@ -38,7 +44,7 @@ usage: NanoIsoform.py [-h] [--SIQ_thres SIQ_THRES] [--prob_thres PROB_THRES]
                       [--hcjwr_prob_thres HCJWR_PROB_THRES]
                       [--hcjwr_JAQ_thres HCJWR_JAQ_THRES]
                       [--hcjwr_consistence HCJWR_CONSISTENCE]
-                      [--hcjwr_min_count HCJWR_MIN_COUNT] [--test_mode]
+                      [--hcjwr_min_count HCJWR_MIN_COUNT] [--save_hdf]
                       [--no_nearby_jwr_correction] [--skip_round2_correction]
                       prob_table jwr_check_h5 input_BAM
 
@@ -47,8 +53,8 @@ positional arguments:
                         NanoSplicer
   jwr_check_h5          Filename of the HDF5 file output from NanoSplicer
                         modulejwr_checker
-  input_BAM             Filename of the input BAM (same as what has been 
-                        input to NanoSplicer module jwr_checker)
+  input_BAM             Filename of the input BAM (same as what has been input
+                        to NanoSplicer module jwr_checker)
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -76,7 +82,9 @@ optional arguments:
                         Recommended for synthetic RNA data (e.g. SIRV,
                         Sequins) (default: False)
   --output_fn OUTPUT_FN
-                        Output filename (default: NanoIsoform_out.h5)
+                        Output filename, please specify valid extension: .bed
+                        (for BED file) or .gtf (for GTF) file, .csv (for CSV
+                        file) (default: NanoIsoform_out.bed)
   --cfg_fn CFG_FN       Filename of customised config file. (default: )
 
 Definition of High-confidence JWR:
@@ -99,7 +107,8 @@ Note that more stringent threshold than above should be specified. It will be ov
                         junction. (default: 5)
 
 For the developers only::
-  --test_mode           Run in test mode. (default: False)
+  --save_hdf            Save intermediate dataframe into hdf5 file for
+                        debugging. (default: False)
   --no_nearby_jwr_correction
                         For test purpose only: Turn off the correction based
                         on nearby jwr. Note that reads with uncorrected jwr(s)
