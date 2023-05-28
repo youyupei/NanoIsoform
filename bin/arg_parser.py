@@ -6,6 +6,7 @@ import argparse
 import textwrap
 import importlib
 import os
+import sys
 
 from config import *
 import helper
@@ -49,7 +50,8 @@ def parse_arg():
                             of the initial mapping >= this threshold. 
                             '''))
     
-    parser.add_argument('--nearby_jwr_correction_mode', type=str, choices=['majority_vote', 'probability'], default=CORRECTION_ARG['method'],
+    parser.add_argument('--nearby_jwr_correction_mode', type=str, 
+                    choices=['majority_vote', 'probability'], default=CORRECTION_ARG['method'],
                         help= textwrap.dedent(
                             '''
                             How to correct jwr based on nearby corrected jwrs.
@@ -61,7 +63,12 @@ def parse_arg():
     parser.add_argument('--uniform_prior', action='store_true',
                         help='Use uniform prior probability for splice patterns. Recommended for synthetic RNA data (e.g. SIRV, Sequins)')
     parser.add_argument('--output_fn', type=str, default=DEFAULT_INPUT['output_fn'],
-                        help='Output filename')
+                        help=textwrap.dedent(
+            '''
+            Output filename, please specify valid extension:
+                 .bed (for BED file) or .gtf (for GTF) file, .csv (for CSV file)
+            '''))
+                              
     parser.add_argument('--cfg_fn', type=str, default='',
                         help='Filename of customised config file.')
                 
@@ -135,6 +142,18 @@ def parse_arg():
 
     # check file 
     helper.check_exist([args.prob_table, args.jwr_check_h5, args.input_BAM])
+
+    # check output extension valid
+    ext = os.path.splitext(args.output_fn)[-1].lower()
+    if ext not in ['.csv', '.gtf', '.bed', '.h5', '.hdf5']:
+        print(ext)
+        helper.err_msg(f"""
+        The output filename extension is not valid. Please use valid 
+        extension (.bed, .gtf, .csv)""")
+        sys.exit(1)
+
+    if args.save_hdf:
+        args.h5_fn = args.output_fn + '.debug.h5'
     return args
 
 args = parse_arg()

@@ -68,7 +68,7 @@ def get_mapped_start_end(fn):
                          'trans_end': r_end})
 
 # main read correction pipeline
-def nanoisoform_correction_pipeline(save_hd=True):
+def nanoisoform_correction_pipeline(save_hdf5=True):
     '''
     Run the NanoIsoform read correction step.
     Argument: 
@@ -100,7 +100,9 @@ def nanoisoform_correction_pipeline(save_hd=True):
     # get corrected jwrs
     logger.info("Getting corrected jwrs (Round 1)...")
     corrected_all_jwr = jwr_correction.correction_round1(args, tss_tts_d)
-    corrected_all_jwr.to_hdf(args.output_fn, 'corrected_all_jwr')
+    if save_hdf5:
+        corrected_all_jwr.to_hdf(
+            args.h5_fn, 'corrected_all_jwr')
     
     # get all reads after first round correction 
     corrected_read_r1, uncorrected_jwr = \
@@ -118,20 +120,19 @@ def nanoisoform_correction_pipeline(save_hd=True):
             print_out=False))
     
     ## add TSS TTS columns
-    if True: # save the data
-        corrected_read_r1.to_hdf(args.output_fn, key='corrected_read_r1')
-    if uncorrected_jwr is not None:
-        uncorrected_jwr.to_hdf(args.output_fn, key='uncorrected_jwr_r1')
-    else: 
-        return None
+    if save_hdf5:
+        corrected_read_r1.to_hdf(args.h5_fn, key='corrected_read_r1')
+        if uncorrected_jwr is not None:
+            uncorrected_jwr.to_hdf(args.h5_fn, key='uncorrected_jwr_r1')
+
     if args.skip_round2_correction: ## stop if no furthur correction required
-        return None
+        return corrected_read_r1, uncorrected_jwr
 
     #####################################
     # Round correction 2: recover uncorrected reads
     #####################################
-
-    # get reads
+    logger.info("Recovering remaining reads (Round 2 correction)...")
+    ## get reads
     uncorrected_read, _ = jwr_correction.restructure_per_jwr_dataframe(
                                             uncorrected_jwr,
                                             tss_tts_d,
@@ -139,24 +140,26 @@ def nanoisoform_correction_pipeline(save_hd=True):
                                             output_uncorrected=False,
                                             rm_cpl_missed_from_ends=True)
     uncorrected_read.reset_index(drop=False, inplace = True)
-    uncorrected_read.to_hdf(args.output_fn, key='uncorrected_read_r1')
     uncorrected_read['junc_count'] = uncorrected_read.junc.apply(len)
-    uncorrected_read = group_reads(uncorrected_read,max_diff = GROUP_ARG['max_diff'])
+    if save_hdf5:
+        uncorrected_read.to_hdf(args.output_fn, key='uncorrected_read_r1')
     
-    # group together the reads with same number of junc
+    ## group together the reads with same number of junc
+    uncorrected_read = group_reads(uncorrected_read,max_diff = GROUP_ARG['max_diff'])
     read_id_grp = uncorrected_read.groupby(by=['reference_name',
                                             'non_overlap_group',
                                             'junc_count','sub_group'])['read_id'].apply(list)
-    # correct JWR in each group
+    
+    ## correct JWR in each group
     corrected_d_list = []
     uncorrected_d_list = []
     for i in read_id_grp:
-        # correcting jwr_df per read group
+        ### correcting jwr_df per read group
         jwr_to_correct = uncorrected_jwr[uncorrected_jwr.read_id.isin(i)]
         corrected_jwr = jwr_correction.group_and_correct_uncorrected_jwr(args,
                 jwr_to_correct, max_diff=CORRECTION_ARG['dist'])
         
-        # restructure back to read_df
+        ### restructure back to read_df
         corrected_d, uncorrected_d =\
              jwr_correction.restructure_per_jwr_dataframe(
                                                 corrected_jwr,
@@ -170,21 +173,28 @@ def nanoisoform_correction_pipeline(save_hd=True):
     
     ## combine all the groups
     corrected_read_r2 = pd.concat(corrected_d_list)
-    corrected_read_r2.to_hdf(args.output_fn, key='corrected_read_r2')
-    uncorrected_jwr_r2 = pd.concat(uncorrected_d_list)
-    uncorrected_jwr_r2.to_hdf(args.output_fn, key='uncorrected_jwr_r2')
+    uncorrected_jwr_r2 = pd.concat(uncorrected_d_list) 
+    if save_hdf5:
+        corrected_read_r2.to_hdf(args.h5_fn, key='corrected_read_r2')
+        uncorrected_jwr_r2.to_hdf(args.h5_fn, key='uncorrected_jwr_r2')
     
     add_summary(f"After Round 2: {len(corrected_read_r2) + len(corrected_read_r1)} "
                 "reads successfully corrected")
     add_summary(f"After Round 2: {len(uncorrected_jwr_r2.read_id.unique())} "
                 "reads contains JWR with >1 HC junction nearby, remaining uncorrected")
     
-    
+    logger.info(
+        helper.green_msg(
+            f'Round 2 correction is finished. Memory used: {helper.check_memory_usage()}, Total runtime:{helper.check_runtime()}',
+            print_out=False))
+
     if helper.summary_msg:
         print('\n\nSummary:\n', helper.summary_msg)
-    
+
     corrected_read_all = pd.concat([corrected_read_r1,corrected_read_r2])
-    corrected_read_all.to_hdf(args.output_fn, key='corrected_read_all')
+
+    if save_hdf5:
+        corrected_read_all.to_hdf(args.h5_fn, key='corrected_read_all')
     # Up until here, I have generated a h5 file containing multiple pd.DataFrame:
         # keys in output h5
         # '/corrected_all_jwr', ALL JWR after HC junc correction (contain those with 0 or multiple HC junc)
@@ -196,7 +206,7 @@ def nanoisoform_correction_pipeline(save_hd=True):
         # '/corrected_read_new', all corrected read using 1st and 2nd run
         # '/uncorrected_read_new' all uncorrected read using 1st and 2nd run
 
-
+    return corrected_read_all, uncorrected_jwr_r2
 if __name__ == '__main__':
-        nanoisoform_correction_pipeline(save_hd = args.save_hdf)
+        nanoisoform_correction_pipeline(save_hdf5 = args.save_hdf)
 

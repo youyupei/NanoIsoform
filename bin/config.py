@@ -5,7 +5,7 @@ DEFAULT_INPUT = {
     'JAQ_thres': 0.95, 
     'SIQ_thres': -0.8, 
     'prob_thres': 0.8,
-    'output_fn': 'NanoIsoform_out.h5'
+    'output_fn': 'NanoIsoform_out.bed'
 }
 
 #####################################################
@@ -48,6 +48,25 @@ CORRECTION_ARG = {
         'prob_samp_min_prop': 0.1,
         'prob_samp_min_count': 20
 }
+
+
+
+#####################################################
+# filter and merge first pass isoforms.     
+#####################################################
+MERGE_ARG = {
+    # the parent isoform must have >= `min_count` read (otherwise can not be parent)
+    'min_count': 5, 
+    # the tss and tts of the child isoform must not exceed  
+        # the corresponding exon boundary of the parant isoform
+        # more than `max_exbound_ins`
+    'max_ts_dff': 20, 
+    # the tss and tts of the child isoform must not exceed  
+       # the corresponding tss and tts of the parant isoform
+        # more than `max_ts_dff`
+    'max_exbound_ins': 20
+}
+
 
 
 #####################################################
